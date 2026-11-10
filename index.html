@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PQC Vault Bench | Post-Quantum UTXO Migration Workbench</title>
+<meta name="description" content="A zero-dependency interactive workbench for Kyber NTT arithmetic, Module-LWE key encapsulation, WOTS+ and XMSS hash-based signatures, and Grover/Shor bit-security analysis of UTXO quantum migration.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="site-head">
+  <div class="wrap head-inner">
+    <a class="brand" href="./">
+      <span class="brand-mark" aria-hidden="true">PV</span>
+      <span class="brand-text">PQC<span class="brand-dim">VaultBench</span></span>
+    </a>
+    <nav class="head-nav" aria-label="Sections">
+      <a href="#ntt">NTT</a>
+      <a href="#kem">ML-KEM</a>
+      <a href="#wots">WOTS+</a>
+      <a href="#xmss">XMSS</a>
+      <a href="#security">Q-Day</a>
+      <a href="#vectors">Vectors</a>
+    </nav>
+    <button id="theme-toggle" class="theme-btn" type="button" aria-label="Toggle light or dark theme">Light</button>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">Post-quantum / UTXO migration / zero dependencies</p>
+      <h1>The quantum migration<br>workbench for UTXO chains.</h1>
+      <p class="lede">Inspect real lattice arithmetic, run a Module-LWE key exchange, sign a transaction with stateful hash-based signatures, and quantify what Shor and Grover actually do to a Bitcoin-style public key. Everything runs locally in your browser. Nothing is sent anywhere.</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#kem">Run the KEM</a>
+        <a class="btn btn-ghost" href="#security">Check Q-Day risk</a>
+      </div>
+      <div class="hero-stats" role="group" aria-label="Workbench facts">
+        <div class="stat"><span class="stat-num" id="stat-q">3329</span><span class="stat-label">ring modulus q</span></div>
+        <div class="stat"><span class="stat-num" id="stat-n">256</span><span class="stat-label">polynomial degree n</span></div>
+        <div class="stat"><span class="stat-num" id="stat-tests">94</span><span class="stat-label">passing unit tests</span></div>
+        <div class="stat"><span class="stat-num">0</span><span class="stat-label">runtime dependencies</span></div>
+      </div>
+    </div>
+    <div class="hero-panel" aria-label="Security level comparison">
+      <div class="panel-head">
+        <span>Bit security by scheme</span>
+        <span class="panel-tag" id="security-mode-tag">classical / quantum</span>
+      </div>
+      <div id="hero-chart" class="hero-chart"></div>
+      <div class="chart-legend" id="hero-legend"></div>
+      <p class="panel-note">secp256k1 loses all discrete-log security to Shor; lattice and hash-based schemes retain a large quantum work factor.</p>
+    </div>
+  </section>
+
+  <!-- ================= NTT ================= -->
+  <section id="ntt" class="section">
+    <div class="section-head">
+      <span class="kicker">01 / Ring arithmetic</span>
+      <h2>Number Theoretic Transform</h2>
+      <p>The speed primitive inside ML-KEM. Polynomials live in Z<sub>3329</sub>[x]/(x<sup>256</sup>+1). Seven Cooley-Tukey stages plus base-case multiplication give exact negacyclic convolution, verified against an O(n<sup>2</sup>) schoolbook reference.</p>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>NTT spectrum</h3>
+        <p class="card-sub">First 64 coefficients of the forward transform for a ramp polynomial.</p>
+        <div id="ntt-chart" class="chart"></div>
+        <div class="chart-legend" id="ntt-legend"></div>
+        <div class="check-row" id="ntt-checks"></div>
+      </div>
+      <div class="card">
+        <h3>Controls</h3>
+        <div class="field">
+          <label for="ntt-pattern">Input polynomial</label>
+          <select id="ntt-pattern">
+            <option value="ramp">Linear ramp (i * 37 + 11)</option>
+            <option value="sparse">Sparse impulse (x^0 + x^137)</option>
+            <option value="alt">Alternating +/- coefficients</option>
+            <option value="noise">Deterministic pseudo-noise</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="ntt-scale">Coefficient scale <output id="ntt-scale-out">37</output></label>
+          <input type="range" id="ntt-scale" min="1" max="97" value="37">
+        </div>
+        <div class="field">
+          <label for="ntt-count">Coefficients shown <output id="ntt-count-out">64</output></label>
+          <input type="range" id="ntt-count" min="16" max="256" step="16" value="64">
+        </div>
+        <div class="readout" id="ntt-formula">
+          <div><span>zeta[0..3]</span><b id="ntt-zeta">2285, 2571, 2970, 1812</b></div>
+          <div><span>gamma[0..3]</span><b id="ntt-gamma">17, 3312, 2761, 568</b></div>
+        </div>
+        <p class="hint">The transform is linear and invertible. Drag the sliders to see how the spectrum responds.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= ML-KEM ================= -->
+  <section id="kem" class="section">
+    <div class="section-head">
+      <span class="kicker">02 / Module-LWE</span>
+      <h2>ML-KEM key encapsulation</h2>
+      <p>A real Module-LWE key exchange over the Kyber ring with centered-binomial error, ciphertext compression and Fujisaki-Okamoto style implicit rejection. Educational parameter sets carry FIPS 203 names; this is not a validated constant-time implementation.</p>
+    </div>
+    <div class="kem-bar">
+      <div class="field inline">
+        <label for="kem-param">Parameter set</label>
+        <select id="kem-param">
+          <option value="toy-64">Toy (k=2, du=8, dv=4)</option>
+          <option value="ML-KEM-512">ML-KEM-512</option>
+          <option value="ML-KEM-768" selected>ML-KEM-768</option>
+          <option value="ML-KEM-1024">ML-KEM-1024</option>
+        </select>
+      </div>
+      <div class="field inline">
+        <label for="kem-seed">Seed</label>
+        <input type="text" id="kem-seed" value="pqc-vault-bench-demo" spellcheck="false">
+      </div>
+      <button class="btn btn-primary" id="kem-run" type="button">Encapsulate</button>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Shared secret handshake</h3>
+        <div class="flow" id="kem-flow"></div>
+        <div class="hex-block">
+          <div class="hex-row"><span>ek</span><code id="kem-ek">-</code></div>
+          <div class="hex-row"><span>ct</span><code id="kem-ct">-</code></div>
+          <div class="hex-row"><span>K (Alice)</span><code id="kem-k1">-</code></div>
+          <div class="hex-row"><span>K (Bob)</span><code id="kem-k2">-</code></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Centered binomial error</h3>
+        <p class="card-sub">Distribution of the lattice error coefficients, sampled from Psi<sub>eta</sub>.</p>
+        <div id="err-chart" class="chart"></div>
+        <div class="chart-legend" id="err-legend"></div>
+        <div class="check-row" id="kem-checks"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= WOTS+ ================= -->
+  <section id="wots" class="section">
+    <div class="section-head">
+      <span class="kicker">03 / Hash-based signatures, part one</span>
+      <h2>WOTS+ one-time signer</h2>
+      <p>Winternitz chains with w=16 turn a 256-bit digest into 67 short hash chains. A checksum stops an attacker from pushing any chain forward. Each key is safe for exactly one message.</p>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Sign a message</h3>
+        <div class="field">
+          <label for="wots-msg">Message</label>
+          <input type="text" id="wots-msg" value="Migrate UTXO to a PQC output" spellcheck="false">
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="wots-sign" type="button">Sign</button>
+          <button class="btn btn-ghost" id="wots-verify" type="button">Verify</button>
+          <button class="btn btn-ghost" id="wots-tamper" type="button">Tamper message</button>
+        </div>
+        <div class="verdict" id="wots-verdict" role="status">Press Sign to produce a WOTS+ signature.</div>
+      </div>
+      <div class="card">
+        <h3>Winternitz chain lengths</h3>
+        <p class="card-sub">The first 32 message digits. Each bar is the number of hash steps revealed in the signature; the light remainder stays hidden.</p>
+        <div id="wots-chart" class="chart"></div>
+        <div class="chart-legend" id="wots-legend"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= XMSS ================= -->
+  <section id="xmss" class="section">
+    <div class="section-head">
+      <span class="kicker">04 / Hash-based signatures, part two</span>
+      <h2>XMSS Merkle tree</h2>
+      <p>A stateful many-time signature scheme: 2<sup>h</sup> WOTS+ public keys become leaves of a Merkle tree. Every signature carries a leaf index and an authentication path. State is consumed, never reused.</p>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Tree state</h3>
+        <div class="field">
+          <label for="xmss-height">Tree height <output id="xmss-height-out">3</output></label>
+          <input type="range" id="xmss-height" min="1" max="4" value="3">
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="xmss-sign" type="button">Sign next message</button>
+          <button class="btn btn-ghost" id="xmss-reset" type="button">Reset tree</button>
+        </div>
+        <div class="readout" id="xmss-readout"></div>
+        <div class="verdict" id="xmss-verdict" role="status">A fresh tree is ready.</div>
+      </div>
+      <div class="card">
+        <h3>Merkle tree</h3>
+        <div id="xmss-tree" class="tree"></div>
+        <p class="hint">The highlighted path is the authentication path for the most recent signature.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SECURITY ================= -->
+  <section id="security" class="section">
+    <div class="section-head">
+      <span class="kicker">05 / Q-Day readiness</span>
+      <h2>Shor, Grover & UTXO exposure</h2>
+      <p>Shor breaks elliptic-curve discrete logs in polynomial time; Grover only halves hash preimage security. Whether a UTXO is exposed depends on whether its public key is already visible on chain.</p>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>UTXO risk scorer</h3>
+        <div class="field">
+          <label for="risk-value">Value (BTC)</label>
+          <input type="number" id="risk-value" value="12.5" min="0" step="0.1">
+        </div>
+        <div class="field">
+          <label for="risk-age">Age (blocks)</label>
+          <input type="number" id="risk-age" value="180000" min="0" step="1000">
+        </div>
+        <label class="switch"><input type="checkbox" id="risk-exposed" checked><span>Public key revealed on chain</span></label>
+        <label class="switch"><input type="checkbox" id="risk-p2pkh" checked><span>Legacy P2PKH output</span></label>
+        <div class="risk-meter" id="risk-meter"></div>
+        <div class="verdict" id="risk-advice" role="status"></div>
+      </div>
+      <div class="card">
+        <h3>Classical vs quantum work</h3>
+        <p class="card-sub">Estimated bit-security levels. A zero means the primitive is fully broken by a large fault-tolerant quantum computer.</p>
+        <div id="sec-chart" class="chart"></div>
+        <div class="chart-legend" id="sec-legend"></div>
+        <div class="readout" id="sec-readout"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= VECTORS ================= -->
+  <section id="vectors" class="section">
+    <div class="section-head">
+      <span class="kicker">06 / Reproducibility</span>
+      <h2>Deterministic hex test vectors</h2>
+      <p>Everything in this workbench is seeded. Export a JSON bundle of NTT tables, KEM handshakes, WOTS/XMSS artifacts and the security table, then reproduce it byte for byte.</p>
+    </div>
+    <div class="card">
+      <div class="btn-row">
+        <button class="btn btn-primary" id="vec-run" type="button">Generate vectors</button>
+        <button class="btn btn-ghost" id="vec-copy" type="button">Copy JSON</button>
+        <button class="btn btn-ghost" id="vec-download" type="button">Download .json</button>
+      </div>
+      <pre id="vec-output" class="code-block" aria-label="Test vector JSON">Press "Generate vectors" to build the deterministic bundle.</pre>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap foot-inner">
+    <span>PQC Vault Bench / pure JavaScript, zero dependencies</span>
+    <span>Built for the BCH BLAZE 2026 and Aevum QDay builder challenges</span>
+  </div>
+</footer>
+
+<script src="src/pqc.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
