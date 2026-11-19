@@ -35,12 +35,6 @@
     return r;
   }
 
-  function bitRevPow(x, bits) {
-    let r = 0;
-    for (let i = 0; i < bits; i++) r = (r << 1) | ((x >> i) & 1);
-    return r;
-  }
-
   // Precomputed tables of the negacyclic Number Theoretic Transform.
   // ZETAS[j] = ZETA^bitRev7(j) mod Q. GAMMAS[i] = ZETA^(2*bitRev7(i)+1).
   const ZETAS = new Array(128);
@@ -367,16 +361,6 @@
       }
     }
     return A;
-  }
-
-  function dotNTT(aHat, bHat) {
-    // Both arguments are arrays of NTT-domain polynomials.
-    let acc = new Array(N).fill(0);
-    for (let i = 0; i < aHat.length; i++) {
-      const prod = baseCaseMultiply(aHat[i], bHat[i]);
-      for (let j = 0; j < N; j++) acc[j] = mod(acc[j] + prod[j]);
-    }
-    return acc;
   }
 
   function compress(x, d) {
@@ -939,11 +923,11 @@
   // ============================================================
   const api = {
     Q, N, ZETA, ZETAS, ZETAS_INV, GAMMAS, INV_128,
-    mod, modPow, bitRev7, bitRevPow, assertPoly,
+    mod, modPow, bitRev7, assertPoly,
     ntt, inverseNTT, baseCaseMultiply, polyMul, schoolbookMul,
     polyAdd, polySub, polyZero, polyOne,
     sha256, utf8Bytes, bytesToHex, hexToBytes, hashHex, xof, randomBytes, bytesEqual,
-    KEM_PARAMS, KEM_DEFAULT, cbdSample, samplePoly, matrixFromSeed, dotNTT,
+    KEM_PARAMS, KEM_DEFAULT, cbdSample, samplePoly, matrixFromSeed,
     compress, decompress, compressPoly, decompressPoly,
     encodePoly, decodePoly, polyToBytes12, bytesToPoly12, shakeKey,
     MLKEM,
