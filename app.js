@@ -586,11 +586,16 @@
   }
   function buildVectors(full) {
     const seed = $('kem-seed').value || 'pqc-vault-bench-demo';
-    const bundle = full ? A.verificationBundle(seed) : P.exportTestVectors(seed);
-    vectorJSON = JSON.stringify(bundle, null, 2);
-    vectorName = full ? 'pqc-vault-bench-verification.json' : 'pqc-vault-bench-vectors.json';
-    $('vec-output').textContent = vectorJSON;
-    vectorChips(bundle);
+    // The bundle does real KEM/XMSS work, so show a busy state and let the
+    // paint happen before the computation blocks the main thread.
+    $('vec-output').textContent = 'Computing ' + (full ? 'verification bundle' : 'test vectors') + '...';
+    setTimeout(() => {
+      const bundle = full ? A.verificationBundle(seed) : P.exportTestVectors(seed);
+      vectorJSON = JSON.stringify(bundle, null, 2);
+      vectorName = full ? 'pqc-vault-bench-verification.json' : 'pqc-vault-bench-vectors.json';
+      $('vec-output').textContent = vectorJSON;
+      vectorChips(bundle);
+    }, 30);
   }
   $('vec-run').addEventListener('click', () => buildVectors(false));
   $('vec-verify').addEventListener('click', () => buildVectors(true));
