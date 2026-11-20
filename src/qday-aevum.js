@@ -116,7 +116,7 @@
     let n;
     if (typeof value === 'bigint') n = value;
     else if (typeof value === 'number') {
-      if (!Number.isInteger(value) || value < 0) throw new RangeError('uint256 number must be a non-negative integer');
+      if (!Number.isSafeInteger(value) || value < 0) throw new RangeError('uint256 number must be a non-negative safe integer');
       n = BigInt(value);
     } else if (typeof value === 'string') {
       const s = value.trim();
@@ -229,6 +229,23 @@
 
   // ---- Canonical SHA-256 commitments & PQC Vault Settlement Anchor --------
 
+  const NONCE_RE = /^0x[0-9a-fA-F]{16,64}$/;
+  const ANCHOR_XMSS_HEIGHT = 2;
+  const ANCHOR_XMSS_SCHEME = 'XMSS-SHA256-WOTS16';
+
+  // Random nonce for replay resistance. Callers that need reproducible
+  // vectors pass opts.nonce explicitly; the default is fresh entropy.
+  function randomHexBytes(n) {
+    const out = new Uint8Array(n);
+    const c = typeof globalThis !== 'undefined' ? globalThis.crypto : null;
+    if (c && typeof c.getRandomValues === 'function') {
+      c.getRandomValues(out);
+    } else {
+      for (let i = 0; i < n; i++) out[i] = Math.floor(Math.random() * 256);
+    }
+    return '0x' + P.bytesToHex(out);
+  }
+
   function canonicalString(value) {
     if (value === null || typeof value !== 'object') return JSON.stringify(value);
     if (Array.isArray(value)) return '[' + value.map(canonicalString).join(',') + ']';
@@ -297,6 +314,11 @@
       throw new RangeError('deadlineUnix must be a positive integer');
     }
 
+    const nonce = opts.nonce !== undefined ? String(opts.nonce).trim().toLowerCase() : randomHexBytes(16);
+    if (!NONCE_RE.test(nonce)) {
+      throw new TypeError('nonce must be a 0x-prefixed hex string of 8 to 32 bytes');
+    }
+
     const seed = String(opts.seed || 'qday-aevum-vault-v1');
     const attestation = buildVaultAttestation({
       seed,
@@ -304,7 +326,11 @@
       riskInput: opts.riskInput
     });
     const calldata = encodeTransfer(merchant, amountRaw);
+    const xmss = P.XMSS({ height: ANCHOR_XMSS_HEIGHT, seed: seed + ':qday-anchor-xmss' });
 
+    // The payload declares the vault XMSS root and a fresh nonce, so the
+    // signature is bound to a specific signer identity and a unique
+    // settlement instance rather than being replayable or self-referential.
     const payload = {
       schema: 'qday-aevum/tusd8-settlement-v1',
       chainId: NETWORK.chainId,
@@ -318,7 +344,11 @@
       amountRaw: amountRaw.toString(10),
       spendCapTusd8: formatTokenUnits(spendCapRaw, CONTRACTS.tUSD8.decimals),
       spendCapRaw: spendCapRaw.toString(10),
+      nonce,
       deadlineUnix,
+      xmssScheme: ANCHOR_XMSS_SCHEME,
+      xmssHeight: ANCHOR_XMSS_HEIGHT,
+      xmssRoot: '0x' + xmss.root,
       calldata,
       attestationHash: attestation.attestationHash
     };
@@ -329,7 +359,6 @@
       'qday-commitment:'
     );
 
-    const xmss = P.XMSS({ height: 2, seed: seed + ':qday-anchor-xmss' });
     const signature = xmss.sign(receiptHash);
 
     const txRequest = {
@@ -351,39 +380,67 @@
     };
   }
 
-  function verifySettlementAnchor(anchor) {
+  function verifySettlementAnchor(anchor, options) {
+    const opts = options || {};
+    const nowUnix = opts.nowUnix !== undefined ? Number(opts.nowUnix) : Math.floor(Date.now() / 1000);
     const errors = [];
     const checks = {
       chainOk: false,
       tokenOk: false,
+      schemaOk: false,
+      addressesOk: false,
+      displayOk: false,
+      nonceOk: false,
+      deadlineOk: false,
       spendCapOk: false,
       calldataOk: false,
       attestationOk: false,
+      xmssRootOk: false,
+      txRequestOk: false,
       receiptHashOk: false,
       commitmentHashOk: false,
       pqcSignatureOk: false
     };
 
     if (!anchor || typeof anchor !== 'object' || !anchor.payload || !anchor.attestation || !anchor.signature) {
-      return { valid: false, checks, errors: ['anchor object is incomplete'] };
+      return { valid: false, checks, errors: ['anchor object is incomplete'], nowUnix };
     }
 
     const p = anchor.payload;
     const att = anchor.attestation;
+    const sig = anchor.signature;
 
     checks.chainOk = p.chainId === NETWORK.chainId && p.chainIdHex === NETWORK.chainIdHex;
     if (!checks.chainOk) errors.push('chainId mismatch (expected 44005 / 0xabe5)');
 
     checks.tokenOk = isValidAddress(p.token) &&
       normalizeAddress(p.token) === normalizeAddress(CONTRACTS.tUSD8.address) &&
-      p.tokenDecimals === CONTRACTS.tUSD8.decimals;
-    if (!checks.tokenOk) errors.push('token address or decimals mismatch for official tUSD8');
+      p.tokenDecimals === CONTRACTS.tUSD8.decimals &&
+      p.tokenSymbol === CONTRACTS.tUSD8.symbol;
+    if (!checks.tokenOk) errors.push('token address, symbol or decimals mismatch for official tUSD8');
+
+    checks.schemaOk = p.schema === 'qday-aevum/tusd8-settlement-v1' &&
+      att.schema === 'qday-aevum/pqc-attestation-v1';
+    if (!checks.schemaOk) errors.push('payload or attestation schema mismatch (domain separation)');
+
+    checks.addressesOk = isValidAddress(p.payer) && isValidAddress(p.merchant);
+    if (!checks.addressesOk) errors.push('payer or merchant is not a valid EVM address');
+
+    checks.nonceOk = typeof p.nonce === 'string' && NONCE_RE.test(p.nonce);
+    if (!checks.nonceOk) errors.push('missing or malformed settlement nonce');
+
+    checks.deadlineOk = Number.isInteger(p.deadlineUnix) && p.deadlineUnix > 0 && p.deadlineUnix >= nowUnix;
+    if (!checks.deadlineOk) errors.push('settlement deadline missing or already expired');
 
     try {
       const amountRaw = BigInt(p.amountRaw);
       const spendCapRaw = BigInt(p.spendCapRaw);
       checks.spendCapOk = amountRaw > 0n && amountRaw <= spendCapRaw;
       if (!checks.spendCapOk) errors.push('amount violates positive or spend-cap constraint');
+
+      checks.displayOk = p.amountTusd8 === formatTokenUnits(amountRaw, CONTRACTS.tUSD8.decimals) &&
+        p.spendCapTusd8 === formatTokenUnits(spendCapRaw, CONTRACTS.tUSD8.decimals);
+      if (!checks.displayOk) errors.push('display amounts disagree with raw base units');
 
       const decoded = decodeTransferCalldata(p.calldata);
       checks.calldataOk = normalizeAddress(decoded.to) === normalizeAddress(p.merchant) &&
@@ -399,10 +456,36 @@
       const expectedAttHash = sha256Hex0x(canonicalString(attBody), 'qday-attestation:');
       checks.attestationOk = att.attestationHash === expectedAttHash &&
         p.attestationHash === expectedAttHash &&
+        att.chainId === NETWORK.chainId &&
+        att.token === CONTRACTS.tUSD8.address.toLowerCase() &&
+        Object.prototype.hasOwnProperty.call(P.KEM_PARAMS, att.kemParam) &&
         att.decapsulationMatches === true;
-      if (!checks.attestationOk) errors.push('PQC attestation digest mismatch or decapsulation invalid');
+      if (!checks.attestationOk) errors.push('PQC attestation digest, scope or decapsulation invalid');
     } catch (err) {
       errors.push('attestation verification error: ' + err.message);
+    }
+
+    // The declared XMSS root in the payload binds the signature to a specific
+    // vault identity; a signature from any other tree fails here.
+    checks.xmssRootOk = p.xmssScheme === ANCHOR_XMSS_SCHEME &&
+      Number.isInteger(p.xmssHeight) && p.xmssHeight > 0 && p.xmssHeight <= 20 &&
+      typeof p.xmssRoot === 'string' && /^0x[0-9a-f]{64}$/.test(p.xmssRoot) &&
+      ('0x' + String(sig.root)) === p.xmssRoot &&
+      Array.isArray(sig.proof) && sig.proof.length === p.xmssHeight &&
+      Number.isInteger(sig.index) && sig.index >= 0 && sig.index < (1 << p.xmssHeight);
+    if (!checks.xmssRootOk) errors.push('XMSS root, height or leaf index not bound to the payload');
+
+    try {
+      const tx = anchor.txRequest;
+      checks.txRequestOk = !!tx && typeof tx === 'object' &&
+        isValidAddress(tx.to) && normalizeAddress(tx.to) === normalizeAddress(CONTRACTS.tUSD8.address) &&
+        tx.data === p.calldata &&
+        isValidAddress(tx.from) && normalizeAddress(tx.from) === normalizeAddress(p.payer) &&
+        tx.chainId === NETWORK.chainIdHex &&
+        tx.value === '0x0';
+      if (!checks.txRequestOk) errors.push('txRequest does not match the verified payload');
+    } catch (err) {
+      errors.push('txRequest verification error: ' + err.message);
     }
 
     const expectedReceipt = sha256Hex0x(canonicalString(p), 'qday-receipt:');
@@ -417,12 +500,11 @@
     if (!checks.commitmentHashOk) errors.push('commitmentHash mismatch');
 
     try {
-      const sig = anchor.signature;
       const wotsOk = sig.message === anchor.receiptHash &&
         Array.isArray(sig.wots) &&
         P.wotsVerify(anchor.receiptHash, sig.wots.map(P.hexToBytes), sig.leaf);
-      const merkleOk = Array.isArray(sig.proof) &&
-        P.verifyMerkleProof(sig.leaf, sig.proof, sig.root, sig.index, sig.proof.length);
+      const merkleOk = checks.xmssRootOk &&
+        P.verifyMerkleProof(sig.leaf, sig.proof, p.xmssRoot.slice(2), sig.index, p.xmssHeight);
       checks.pqcSignatureOk = !!(wotsOk && merkleOk);
       if (!checks.pqcSignatureOk) errors.push('XMSS/WOTS+ signature or Merkle authentication path failed');
     } catch (err) {
@@ -430,7 +512,7 @@
     }
 
     const valid = Object.values(checks).every(Boolean);
-    return { valid, checks, errors };
+    return { valid, checks, errors, nowUnix };
   }
 
   // ---- JSON-RPC read-only client + deterministic simulation fallback ------
@@ -601,15 +683,16 @@
       throw new Error('wallet returned no valid accounts');
     }
     const chainHex = await provider.request({ method: 'eth_chainId' });
-    const chainId = Number(BigInt(chainHex));
+    let chainId = null;
+    try { chainId = Number(BigInt(chainHex)); } catch (err) { chainId = null; }
     return {
       connected: true,
       mode: 'wallet',
       account: normalizeAddress(accounts[0]),
       chainId,
-      chainIdHex: '0x' + chainId.toString(16),
+      chainIdHex: chainId === null ? 'unknown' : '0x' + chainId.toString(16),
       onAevum: chainId === NETWORK.chainId,
-      reason: null
+      reason: chainId === null ? 'wallet reported an unreadable chainId' : null
     };
   }
 
@@ -642,6 +725,14 @@
           method: 'wallet_addEthereumChain',
           params: [buildAddChainParams()]
         });
+        // Most wallets switch automatically after add; some need an explicit
+        // second switch request. Failure here still counts as added.
+        try {
+          await provider.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: NETWORK.chainIdHex }]
+          });
+        } catch (ignored) { /* wallet already on the new chain or defers */ }
         return {
           switched: true,
           added: true,
@@ -659,28 +750,32 @@
     if (!verification.valid) {
       throw new Error('refusing transfer for invalid settlement anchor: ' + verification.errors.join('; '));
     }
+    // The send uses only fields that passed verification: the payload payer and
+    // the payload calldata. txRequest is display metadata, not the spend input.
     if (!provider || typeof provider.request !== 'function') {
-      const simTxHash = sha256Hex0x(
-        anchor.receiptHash + ':' + anchor.commitmentHash,
+      const simId = sha256Hex0x(
+        anchor.receiptHash + ':' + anchor.commitmentHash + ':' + anchor.payload.nonce,
         'qday-sim-tx:'
       );
       return {
         simulated: true,
         status: 'simulated',
-        txHash: simTxHash,
-        explorerUrl: explorerTxUrl(simTxHash),
+        txHash: null,
+        simulatedTxId: simId,
+        explorerUrl: null,
         chainId: NETWORK.chainId,
         to: CONTRACTS.tUSD8.address,
-        data: anchor.txRequest.data
+        data: anchor.payload.calldata,
+        note: 'deterministic offline simulation; nothing was broadcast to chain ' + NETWORK.chainId
       };
     }
     await ensureAevumNetwork(provider);
     const txHash = await provider.request({
       method: 'eth_sendTransaction',
       params: [{
-        from: anchor.txRequest.from,
+        from: anchor.payload.payer,
         to: CONTRACTS.tUSD8.address,
-        data: anchor.txRequest.data,
+        data: anchor.payload.calldata,
         value: '0x0'
       }]
     });
@@ -688,10 +783,11 @@
       simulated: false,
       status: 'submitted',
       txHash,
+      simulatedTxId: null,
       explorerUrl: /^0x[0-9a-fA-F]{64}$/.test(String(txHash)) ? explorerTxUrl(txHash) : NETWORK.explorerUrl,
       chainId: NETWORK.chainId,
       to: CONTRACTS.tUSD8.address,
-      data: anchor.txRequest.data
+      data: anchor.payload.calldata
     };
   }
 
@@ -700,6 +796,10 @@
     CONTRACTS,
     SELECTORS,
     DEMO_ADDRESSES,
+    NONCE_RE,
+    ANCHOR_XMSS_HEIGHT,
+    ANCHOR_XMSS_SCHEME,
+    randomHexBytes,
     explorerAddressUrl,
     explorerTokenUrl,
     explorerTxUrl,

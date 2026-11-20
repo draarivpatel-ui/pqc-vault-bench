@@ -314,8 +314,13 @@ test('Q17: buildAddChainParams and wallet helpers work with mock EIP-1193 provid
   });
   const simTx = await Q.sendTusd8Transfer(null, anchor);
   assert.equal(simTx.simulated, true);
-  assert.match(simTx.txHash, /^0x[0-9a-f]{64}$/);
-  assert.ok(simTx.explorerUrl.startsWith('https://explorer-test.qday.info/tx/0x'));
+  // A simulated send is honestly marked: a deterministic settlement id, never
+  // a fabricated transaction hash, and no explorer link to a tx that was
+  // never broadcast.
+  assert.equal(simTx.txHash, null);
+  assert.match(simTx.simulatedTxId, /^0x[0-9a-f]{64}$/);
+  assert.equal(simTx.explorerUrl, null);
+  assert.match(simTx.note, /not broadcast|nothing was broadcast/i);
 
   // Mock provider that needs wallet_addEthereumChain (4902) before sending tx
   const calls = [];
@@ -376,6 +381,164 @@ test('Q18: sendTusd8Transfer refuses to submit a tampered anchor', async () => {
 // =========================================================================
 // Section 6: Web UI Wiring & Clean Heading Layout
 // =========================================================================
+
+// =========================================================================
+// Section 7: Anchor binding adversarial regression
+// =========================================================================
+
+function baseAnchor(extra) {
+  return Q.createSettlementAnchor(Object.assign({
+    payer: TEST_PAYER,
+    merchant: TEST_MERCHANT,
+    amountTusd8: '25',
+    spendCapTusd8: '100',
+    seed: 'adversarial',
+    nonce: '0x' + '11'.repeat(16)
+  }, extra || {}));
+}
+
+test('Q20: every anchor carries a fresh nonce and identical inputs are not replayable', () => {
+  const a1 = Q.createSettlementAnchor({ payer: TEST_PAYER, merchant: TEST_MERCHANT, amountTusd8: '25', spendCapTusd8: '100', seed: 'replay' });
+  const a2 = Q.createSettlementAnchor({ payer: TEST_PAYER, merchant: TEST_MERCHANT, amountTusd8: '25', spendCapTusd8: '100', seed: 'replay' });
+  assert.notEqual(a1.payload.nonce, a2.payload.nonce);
+  assert.notEqual(a1.receiptHash, a2.receiptHash);
+  assert.notEqual(a1.commitmentHash, a2.commitmentHash);
+  assert.notEqual(a1.signature.digest, a2.signature.digest);
+  assert.match(a1.payload.nonce, Q.NONCE_RE);
+  // An explicit nonce restores determinism for reproducible vectors.
+  const d1 = baseAnchor({ nonce: '0x' + 'ab'.repeat(16) });
+  const d2 = baseAnchor({ nonce: '0x' + 'ab'.repeat(16) });
+  assert.equal(d1.receiptHash, d2.receiptHash);
+  assert.throws(() => baseAnchor({ nonce: '0x1234' }), TypeError);
+  assert.throws(() => baseAnchor({ nonce: 'deadbeef' }), TypeError);
+  const bad = baseAnchor();
+  bad.payload.nonce = '0x00';
+  const r = Q.verifySettlementAnchor(bad);
+  assert.equal(r.valid, false);
+  assert.equal(r.checks.nonceOk, false);
+});
+
+test('Q21: expired or malformed deadlines are rejected against a supplied clock', () => {
+  const past = baseAnchor({ deadlineUnix: 1700000000 });
+  assert.equal(Q.verifySettlementAnchor(past, { nowUnix: 1700000001 }).valid, false);
+  assert.equal(Q.verifySettlementAnchor(past, { nowUnix: 1700000001 }).checks.deadlineOk, false);
+  // Boundary: the anchor is valid exactly at its deadline, invalid one second later.
+  assert.equal(Q.verifySettlementAnchor(past, { nowUnix: 1700000000 }).valid, true);
+  const bad = baseAnchor();
+  bad.payload.deadlineUnix = 'soon';
+  const r = Q.verifySettlementAnchor(bad);
+  assert.equal(r.valid, false);
+  assert.equal(r.checks.deadlineOk, false);
+  assert.throws(() => baseAnchor({ deadlineUnix: -5 }), RangeError);
+});
+
+test('Q22: a swapped txRequest is rejected and the send uses the verified payload only', async () => {
+  const ATTACK = '0x0000000000000000000000000000000000000bad';
+  const t = baseAnchor();
+  t.txRequest.data = Q.encodeTransfer(ATTACK, 100000000n);
+  const r = Q.verifySettlementAnchor(t);
+  assert.equal(r.valid, false);
+  assert.equal(r.checks.txRequestOk, false);
+  await assert.rejects(() => Q.sendTusd8Transfer(null, t), /invalid settlement anchor/);
+  // The send path consumes payload.payer and payload.calldata exclusively.
+  const sent = [];
+  const mock = {
+    async request(req) {
+      sent.push(req.method);
+      if (req.method === 'wallet_switchEthereumChain') return null;
+      if (req.method === 'eth_sendTransaction') { sent.push(req.params[0]); return '0x' + 'ef'.repeat(32); }
+      throw new Error('unexpected ' + req.method);
+    }
+  };
+  const anchor = baseAnchor();
+  const res = await Q.sendTusd8Transfer(mock, anchor);
+  const spend = sent.find(x => typeof x === 'object' && x.data);
+  assert.equal(spend.data, anchor.payload.calldata);
+  assert.equal(spend.from, anchor.payload.payer);
+  assert.equal(res.txHash, '0x' + 'ef'.repeat(32));
+  assert.match(res.explorerUrl, /\/tx\/0xefef/);
+});
+
+test('Q23: a signature from a foreign XMSS tree fails the root binding', () => {
+  const anchor = baseAnchor();
+  const foreign = require('../src/pqc.js').XMSS({ height: 2, seed: 'foreign-tree' });
+  const t = JSON.parse(JSON.stringify(anchor));
+  t.signature = foreign.sign(anchor.receiptHash);
+  const r = Q.verifySettlementAnchor(t);
+  assert.equal(r.valid, false);
+  assert.equal(r.checks.xmssRootOk, false);
+  // The declared root itself is bound by the receipt hash: tampering with the
+  // payload root breaks both xmssRootOk and receiptHashOk.
+  const t2 = JSON.parse(JSON.stringify(anchor));
+  t2.payload.xmssRoot = '0x' + '00'.repeat(32);
+  const r2 = Q.verifySettlementAnchor(t2);
+  assert.equal(r2.valid, false);
+  assert.equal(r2.checks.xmssRootOk, false);
+  assert.equal(r2.checks.receiptHashOk, false);
+  // Index and proof length are bound to the declared height.
+  const t3 = JSON.parse(JSON.stringify(anchor));
+  t3.signature.proof = t3.signature.proof.slice(0, 1);
+  const r3 = Q.verifySettlementAnchor(t3);
+  assert.equal(r3.checks.xmssRootOk, false);
+});
+
+test('Q24: payload and attestation schemas are enforced for domain separation', () => {
+  const t = baseAnchor();
+  t.payload.schema = 'evil/settlement-v9';
+  const r = Q.verifySettlementAnchor(t);
+  assert.equal(r.valid, false);
+  assert.equal(r.checks.schemaOk, false);
+  assert.equal(r.checks.receiptHashOk, false);
+  const t2 = baseAnchor();
+  t2.attestation.schema = 'other/attestation';
+  const r2 = Q.verifySettlementAnchor(t2);
+  assert.equal(r2.valid, false);
+  assert.equal(r2.checks.schemaOk, false);
+});
+
+test('Q25: display strings must match raw base units and addresses must be valid', () => {
+  const t = baseAnchor();
+  t.payload.amountTusd8 = '999999';
+  const r = Q.verifySettlementAnchor(t);
+  assert.equal(r.valid, false);
+  assert.equal(r.checks.displayOk, false);
+  const t2 = baseAnchor();
+  t2.payload.merchant = 'not-an-address';
+  const r2 = Q.verifySettlementAnchor(t2);
+  assert.equal(r2.valid, false);
+  assert.equal(r2.checks.addressesOk, false);
+  const t3 = baseAnchor();
+  t3.payload.tokenSymbol = 'FAKE8';
+  const r3 = Q.verifySettlementAnchor(t3);
+  assert.equal(r3.valid, false);
+  assert.equal(r3.checks.tokenOk, false);
+});
+
+test('Q26: verifySettlementAnchor reports all fifteen checks and passes a clean anchor', () => {
+  const r = Q.verifySettlementAnchor(baseAnchor());
+  assert.equal(Object.keys(r.checks).length, 15);
+  assert.equal(r.valid, true);
+  for (const [k, v] of Object.entries(r.checks)) assert.equal(v, true, k);
+  assert.equal(r.errors.length, 0);
+  assert.ok(r.nowUnix > 0);
+});
+
+test('Q27: an anchor signed under a wrong chainId fails chain binding', () => {
+  const t = baseAnchor();
+  t.payload.chainId = 1;
+  t.payload.chainIdHex = '0x1';
+  const r = Q.verifySettlementAnchor(t);
+  assert.equal(r.valid, false);
+  assert.equal(r.checks.chainOk, false);
+  assert.equal(r.checks.receiptHashOk, false);
+});
+
+test('Q28: encodeUint256 refuses non-safe integers that would encode imprecisely', () => {
+  assert.throws(() => Q.encodeUint256(9007199254740993), RangeError);
+  assert.throws(() => Q.encodeUint256(Number.MAX_SAFE_INTEGER + 1), RangeError);
+  assert.equal(Q.encodeUint256(Number.MAX_SAFE_INTEGER).length, 64);
+  assert.equal(Q.encodeUint256('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff').length, 64);
+});
 
 test('Q19: index.html loads src/qday-aevum.js before app.js and exposes QDay panel controls', () => {
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');

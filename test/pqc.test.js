@@ -524,10 +524,11 @@ test('78: analyzePrimitive rejects an unknown scheme', () => {
 // ---------------------------------------------------------------
 // Section 8: UTXO migration risk and test vectors (tests 79-85)
 // ---------------------------------------------------------------
-test('79: an exposed high-value P2PKH UTXO is critical', () => {
+test('79: an exposed high-value UTXO is critical', () => {
   const r = pqc.migrationRisk({ publicKeyRevealed: true, p2pkh: true, valueBtc: 50, ageBlocks: 500000 });
   assert.equal(r.tier, 'critical');
-  assert.equal(r.score, 100);
+  // 60 exposed + 15 value + 5 age; P2PKH adds nothing once the key is revealed.
+  assert.equal(r.score, 80);
 });
 
 test('80: a hidden low-value UTXO is low risk', () => {
@@ -569,4 +570,91 @@ test('85: test vector security table includes ECDSA and ML-DSA-65', () => {
   assert.ok(names.includes('secp256k1 ECDSA'));
   assert.ok(names.includes('ML-DSA-65'));
   assert.equal(pqc.exportTestVectors().security.find(x => x.name === 'secp256k1 ECDSA').quantum, 0);
+});
+
+// ---------------------------------------------------------------
+// Section 9: adversarial hardening (tests 86-91)
+// ---------------------------------------------------------------
+test('86: decapsulate implicitly rejects wrong-length and non-array ciphertexts', () => {
+  const kem = pqc.MLKEM({ param: 'ML-KEM-768' });
+  const keys = kem.deriveFromSeed('hardening');
+  const enc = kem.encapsulate(keys.ek, 'hardening-enc');
+  // One byte short and one byte long both fail the FO re-encryption match.
+  const short = kem.decapsulate(enc.ciphertext.slice(0, enc.ciphertext.length - 1), keys.dk);
+  assert.notDeepEqual(short, enc.sharedSecret);
+  const long = new Uint8Array(enc.ciphertext.length + 1);
+  long.set(enc.ciphertext); long[long.length - 1] = 7;
+  assert.notDeepEqual(kem.decapsulate(long, keys.dk), enc.sharedSecret);
+  // Non-Uint8Array input rejects instead of throwing.
+  assert.notDeepEqual(kem.decapsulate([1, 2, 3], keys.dk), enc.sharedSecret);
+  assert.notDeepEqual(kem.decapsulate(null, keys.dk), enc.sharedSecret);
+  // Rejection is still deterministic for the same malformed input.
+  assert.deepEqual(
+    kem.decapsulate(enc.ciphertext.slice(0, 10), keys.dk),
+    kem.decapsulate(enc.ciphertext.slice(0, 10), keys.dk)
+  );
+});
+
+test('87: wotsVerify returns false on malformed signatures instead of throwing', () => {
+  const kp = pqc.wotsGenerate('wots-hardening');
+  const sig = pqc.wotsSign('msg', kp);
+  assert.equal(pqc.wotsVerify('msg', sig.signature, kp.pkHash), true);
+  assert.equal(pqc.wotsVerify('msg', sig.signature.slice(0, 66), kp.pkHash), false);
+  assert.equal(pqc.wotsVerify('msg', 'not-an-array', kp.pkHash), false);
+  assert.equal(pqc.wotsVerify('msg', null, kp.pkHash), false);
+  const badLen = sig.signature.slice();
+  badLen[0] = new Uint8Array(16);
+  assert.equal(pqc.wotsVerify('msg', badLen, kp.pkHash), false);
+  assert.equal(pqc.wotsVerify('msg', sig.signature, 'short'), false);
+});
+
+test('88: verifyMerkleProof and XMSS.verify reject malformed inputs cleanly', () => {
+  const xmss = pqc.XMSS({ height: 2, seed: 'xmss-hardening' });
+  const sig = xmss.sign('bound message');
+  assert.equal(xmss.verify(sig), true);
+  // Truncated and extended proofs fail closed, never throw.
+  const trunc = Object.assign({}, sig, { proof: sig.proof.slice(0, 1) });
+  assert.equal(xmss.verify(trunc), false);
+  const long = Object.assign({}, sig, { proof: sig.proof.concat(sig.proof[0]) });
+  assert.equal(xmss.verify(long), false);
+  const badHex = Object.assign({}, sig, { proof: ['zz' + sig.proof[0].slice(2)] });
+  assert.equal(xmss.verify(badHex), false);
+  const badIndex = Object.assign({}, sig, { index: 99 });
+  assert.equal(xmss.verify(badIndex), false);
+  assert.equal(pqc.verifyMerkleProof(sig.leaf, sig.proof, sig.root, 0, sig.proof.length), true);
+  assert.equal(pqc.verifyMerkleProof(sig.leaf, sig.proof, sig.root, 0, 9), false);
+  assert.equal(pqc.verifyMerkleProof(sig.leaf, null, sig.root, 0, 2), false);
+  assert.equal(pqc.verifyMerkleProof('xx', sig.proof, sig.root, 0, 2), false);
+});
+
+test('89: decodePoly refuses out-of-bounds reads on short input', () => {
+  assert.throws(() => pqc.decodePoly(new Uint8Array(100), 12), RangeError);
+  assert.throws(() => pqc.decodePoly(new Uint8Array(31), 1), RangeError);
+  assert.throws(() => pqc.decodePoly(null, 1), RangeError);
+  assert.doesNotThrow(() => pqc.decodePoly(new Uint8Array(384), 12));
+  assert.doesNotThrow(() => pqc.decodePoly(new Uint8Array(32), 1));
+});
+
+test('90: P2PKH exposure risk is latent and applies only while the key is hidden', () => {
+  const hidden = pqc.migrationRisk({ publicKeyRevealed: false, p2pkh: true, valueBtc: 0.5, ageBlocks: 10 });
+  assert.equal(hidden.score, 20);
+  assert.equal(hidden.tier, 'low');
+  const revealed = pqc.migrationRisk({ publicKeyRevealed: true, p2pkh: true, valueBtc: 0.5, ageBlocks: 10 });
+  assert.equal(revealed.score, 60);
+  assert.equal(revealed.tier, 'high');
+  // Once the key is revealed, the P2PKH flag changes nothing.
+  const revealedBare = pqc.migrationRisk({ publicKeyRevealed: true, p2pkh: false, valueBtc: 0.5, ageBlocks: 10 });
+  assert.equal(revealedBare.score, revealed.score);
+  // A hidden non-P2PKH output has no latent spend exposure.
+  const hiddenBare = pqc.migrationRisk({ publicKeyRevealed: false, p2pkh: false, valueBtc: 0.5, ageBlocks: 10 });
+  assert.equal(hiddenBare.score, 0);
+});
+
+test('91: exportTestVectors exercises every self check path after hardening', () => {
+  const v = pqc.exportTestVectors('hardening-vectors');
+  assert.equal(v.kem.decapsulationMatches, true);
+  assert.equal(v.xmss.firstSignatureValid, true);
+  // A vector blob tampered after the fact is still verifiable as an object.
+  const json = JSON.parse(JSON.stringify(v));
+  assert.equal(json.ntt.inverseMatches, true);
 });

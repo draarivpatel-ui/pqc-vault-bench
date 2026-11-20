@@ -15,7 +15,7 @@ Live demo: https://aariv.me/pqc-vault-bench/
 - **XMSS** stateful hash-based signatures: a Merkle tree of WOTS+ public keys, authentication paths, one-time key exhaustion and signature verification.
 - **Grover / Shor security analyzer** for secp256k1 ECDSA, RSA-2048, SHA-256, ML-KEM-768, ML-DSA-65 and SLH-DSA-128s, plus a UTXO quantum-exposure risk scorer and hybrid-signature analysis.
 - **Hybrid migration and byte-accounting tables**: exact key, ciphertext and signature byte counts derived from the real implementation, and bit-security envelopes for classical plus post-quantum pairs.
-- **QDay / Aevum Testnet (`tUSD8`) integration** (`src/qday-aevum.js`): official Aevum testnet parameters (`chainId: 44005` / `0xabe5`, RPC `https://rpc-test.qday.info`, official `tUSD8` ERC-20 `0x456569838f1d43009A91ebA4263147Afd7233483`, explorer and faucet links), pure JS ERC-20 ABI encoders/decoders (`balanceOf`, `decimals`, `symbol`, `name`, `totalSupply`, `transfer`, `approve`), a Post-Quantum Vault Settlement Anchor binding ML-KEM / ML-DSA risk attestations and XMSS hash-based signatures to `tUSD8` transfer calldata with spend-cap enforcement, a read-only JSON-RPC probe with deterministic offline simulation fallback, and EIP-1193 wallet helpers (`wallet_addEthereumChain`, `wallet_switchEthereumChain`, `eth_sendTransaction`).
+- **QDay / Aevum Testnet (`tUSD8`) integration** (`src/qday-aevum.js`): official Aevum testnet parameters (`chainId: 44005` / `0xabe5`, RPC `https://rpc-test.qday.info`, official `tUSD8` ERC-20 `0x456569838f1d43009A91ebA4263147Afd7233483`, explorer and faucet links), pure JS ERC-20 ABI encoders/decoders (`balanceOf`, `decimals`, `symbol`, `name`, `totalSupply`, `transfer`, `approve`), a Post-Quantum Vault Settlement Anchor binding ML-KEM / ML-DSA risk attestations and XMSS hash-based signatures to `tUSD8` transfer calldata, a read-only JSON-RPC probe with deterministic offline simulation fallback, and EIP-1193 wallet helpers (`wallet_addEthereumChain`, `wallet_switchEthereumChain`, `eth_sendTransaction`). The anchor payload is canonically bound to chainId, token, payer, merchant, spend cap, a fresh random nonce, an enforced deadline, and the vault XMSS root; a fifteen-check verifier proves every binding, and the send path spends only verified payload fields, so a swapped `txRequest`, an expired deadline, a replayed anchor or a foreign-tree signature all fail closed.
 - **Deterministic hex test-vector exporter** producing a reproducible JSON bundle with copy and download controls. A second export produces the full verification bundle with every self check, the KEM sweep, the reduction certificate and the resource tables.
 
 ## Quick start
@@ -40,15 +40,17 @@ Which runs:
 node --test test/pqc.test.js test/analysis.test.js test/qday-aevum.test.js test/compliance.test.js
 ```
 
-153 passing tests (94 core, 30 analysis, 19 QDay / Aevum integration, 10 compliance) cover NTT algebra, SHA-256, bit packing, error sampling, all four KEM parameter sets, WOTS+ and XMSS forgery resistance, security estimators, test-vector determinism, Montgomery and Barrett reduction, KEM correctness sweeps, exact byte accounting, the reproducible verification bundle, QDay / Aevum network constants, ERC-20 ABI encoding/decoding, PQC settlement anchor tamper detection, RPC parsing and offline simulation fallback, EIP-1193 wallet flows, and repository compliance rules (no dashes, no model attributions, no private details, doc consistency).
+173 passing tests (100 core, 30 analysis, 28 QDay / Aevum integration, 15 compliance) cover NTT algebra, SHA-256, bit packing, error sampling, all four KEM parameter sets, WOTS+ and XMSS forgery resistance, security estimators, test-vector determinism, Montgomery and Barrett reduction, KEM correctness sweeps, exact byte accounting, the reproducible verification bundle, QDay / Aevum network constants, ERC-20 ABI encoding/decoding, PQC settlement anchor tamper detection, RPC parsing and offline simulation fallback, EIP-1193 wallet flows, and repository compliance rules (no dashes, no model attributions, no private details, doc consistency, no banned page furniture).
+
+The adversarial layer pins the failure modes a vault must survive: wrong-length or non-array ciphertexts take the FO implicit-rejection path; malformed WOTS+/XMSS signatures and Merkle proofs fail closed instead of throwing; settlement anchors carry a fresh nonce so identical inputs are not replayable; expired deadlines, wrong chainIds, swapped transaction requests, foreign-tree XMSS signatures, schema mismatches and forged display amounts are all rejected by named checks; and the wallet-facing send path consumes only the verified payload calldata and payer, so a mutated `txRequest` can never redirect funds.
 
 Individual suites:
 
 ```
-npm run test:core         # 94 tests
+npm run test:core         # 100 tests
 npm run test:analysis     # 30 tests
-npm run test:qday         # 19 tests
-npm run test:compliance   # 10 tests
+npm run test:qday         # 28 tests
+npm run test:compliance   # 15 tests
 ```
 
 ## Library API
@@ -89,7 +91,7 @@ Testnet tokens have no monetary value. Use a dedicated testnet-only account; nev
 
 The ML-KEM implementation is an **educational** Module-LWE KEM. The ring arithmetic, NTT, centered-binomial noise, compression and FO-style decapsulation are real, but it is not FIPS 203 validated, not constant time, and not hardened against side channels. Do not use it to protect real funds. The point is to make the moving parts inspectable.
 
-The analysis layer reports exact arithmetic over these educational primitives. The quantum resource figures are order-of-magnitude estimates built from exponent arithmetic, not hardware claims. The KEM correctness sweeps measure this implementation over the seeds shown in the UI; they are not a proof of security or a claim about FIPS 203 validated libraries.
+The analysis layer reports exact arithmetic over these educational primitives. The quantum resource figures are order-of-magnitude estimates built from exponent arithmetic, not hardware claims. The KEM correctness sweeps measure this implementation over the seeds shown in the UI; they are not a proof of security or a claim about FIPS 203 validated libraries. A simulated settlement send produces a deterministic settlement id and is labeled as such: it is never presented as an on-chain transaction hash, and no explorer link is fabricated for a transaction that was never broadcast.
 
 ## Verification telemetry
 

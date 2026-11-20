@@ -262,7 +262,7 @@
       throw new TypeError('hex must be an even-length hex string');
     }
     const out = new Uint8Array(hex.length / 2);
-    for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+    for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
     return out;
   }
 
@@ -279,13 +279,13 @@
   // using counter-mode SHA-256. No external randomness is required.
   function xof(seed, length, label) {
     const s = typeof seed === 'string' ? utf8Bytes(seed) : seed;
+    const lbl = label ? utf8Bytes(label) : new Uint8Array(0);
     const out = new Uint8Array(length);
     let produced = 0, counter = 0;
     while (produced < length) {
       const ctr = new Uint8Array(4);
       ctr[0] = (counter >>> 24) & 0xff; ctr[1] = (counter >>> 16) & 0xff;
       ctr[2] = (counter >>> 8) & 0xff; ctr[3] = counter & 0xff;
-      const lbl = label ? utf8Bytes(label) : new Uint8Array(0);
       const buf = new Uint8Array(lbl.length + s.length + 4);
       buf.set(lbl, 0); buf.set(s, lbl.length); buf.set(ctr, lbl.length + s.length);
       const block = sha256(buf);
@@ -415,6 +415,9 @@
   }
 
   function decodePoly(bytes, d) {
+    if (!bytes || bytes.length * 8 < N * d) {
+      throw new RangeError('decodePoly needs at least ' + Math.ceil(N * d / 8) + ' bytes for d=' + d);
+    }
     const p = new Array(N);
     const mask = Math.pow(2, d) - 1;
     for (let i = 0; i < N; i++) {
@@ -559,6 +562,13 @@
     function decapsulate(ctBytes, dk) {
       const du = params.du, dv = params.dv;
       const uLen = Math.ceil(N * du / 8), vLen = Math.ceil(N * dv / 8);
+      const expected = k * uLen + vLen;
+      // Malformed input (wrong type or wrong length) takes the FO implicit
+      // rejection path directly instead of being decoded with zero padding.
+      if (!(ctBytes instanceof Uint8Array) || ctBytes.length !== expected) {
+        const bad = ctBytes instanceof Uint8Array ? ctBytes : new Uint8Array(0);
+        return shakeKey(dk.z, bad, 'MLKEM-REJECT');
+      }
       let off = 0;
       const uCompressed = [];
       for (let i = 0; i < k; i++) { uCompressed.push(decodePoly(ctBytes.slice(off, off + uLen), du)); off += uLen; }
@@ -694,15 +704,25 @@
   }
 
   function wotsVerify(message, signature, publicKeyHash) {
-    const m = typeof message === 'string' ? utf8Bytes(message) : message;
-    const digest = sha256(m);
-    const digits = messageToBaseW(digest, WOTS_W);
-    const chain = digits.concat(wotsChecksum(digits, WOTS_W));
-    const pk = new Array(WOTS_LEN);
-    for (let i = 0; i < WOTS_LEN; i++) pk[i] = wotsChain(signature[i], chain[i], WOTS_W - 1 - chain[i], new Uint8Array([i, 0]));
-    const buf = new Uint8Array(WOTS_LEN * 32);
-    pk.forEach((p, i) => buf.set(p, i * 32));
-    return bytesToHex(sha256(buf)) === publicKeyHash;
+    try {
+      if (!Array.isArray(signature) || signature.length !== WOTS_LEN) return false;
+      if (typeof publicKeyHash !== 'string' || publicKeyHash.length !== 64) return false;
+      const m = typeof message === 'string' ? utf8Bytes(message) : message;
+      const digest = sha256(m);
+      const digits = messageToBaseW(digest, WOTS_W);
+      const chain = digits.concat(wotsChecksum(digits, WOTS_W));
+      const pk = new Array(WOTS_LEN);
+      for (let i = 0; i < WOTS_LEN; i++) {
+        const el = signature[i];
+        if (!(el instanceof Uint8Array) || el.length !== 32) return false;
+        pk[i] = wotsChain(el, chain[i], WOTS_W - 1 - chain[i], new Uint8Array([i, 0]));
+      }
+      const buf = new Uint8Array(WOTS_LEN * 32);
+      pk.forEach((p, i) => buf.set(p, i * 32));
+      return bytesToHex(sha256(buf)) === publicKeyHash;
+    } catch (err) {
+      return false;
+    }
   }
 
   function merkleRoot(leaves, height) {
@@ -734,15 +754,25 @@
   }
 
   function verifyMerkleProof(leafHex, proof, rootHex, index, height) {
-    let cur = hexToBytes(leafHex);
-    let idx = index;
-    const h = height === undefined ? proof.length : height;
-    for (let d = 0; d < h; d++) {
-      const sib = hexToBytes(proof[d]);
-      cur = (idx & 1) ? hashPair(sib, cur) : hashPair(cur, sib);
-      idx >>= 1;
+    try {
+      if (!Array.isArray(proof) || !Number.isInteger(index) || index < 0) return false;
+      const h = height === undefined ? proof.length : height;
+      if (!Number.isInteger(h) || h < 0 || proof.length !== h) return false;
+      if (typeof leafHex !== 'string' || leafHex.length !== 64) return false;
+      if (typeof rootHex !== 'string' || rootHex.length !== 64) return false;
+      let cur = hexToBytes(leafHex);
+      if (cur.length !== 32) return false;
+      let idx = index;
+      for (let d = 0; d < h; d++) {
+        const sib = hexToBytes(proof[d]);
+        if (sib.length !== 32) return false;
+        cur = (idx & 1) ? hashPair(sib, cur) : hashPair(cur, sib);
+        idx >>= 1;
+      }
+      return bytesToHex(cur) === rootHex;
+    } catch (err) {
+      return false;
     }
-    return bytesToHex(cur) === rootHex;
   }
 
   function XMSS(options) {
@@ -782,11 +812,17 @@
     }
 
     function verify(signature, message) {
-      const msg = message === undefined ? signature.message : message;
-      const pkHash = signature.leaf;
-      if (!wotsVerify(msg, signature.wots.map(hexToBytes), pkHash)) return false;
-      if (!verifyMerkleProof(signature.leaf, signature.proof, rootHex, signature.index, treeHeight)) return false;
-      return true;
+      try {
+        if (!signature || typeof signature !== 'object') return false;
+        if (!Number.isInteger(signature.index) || signature.index < 0 || signature.index >= leafCount) return false;
+        const msg = message === undefined ? signature.message : message;
+        const pkHash = signature.leaf;
+        if (!wotsVerify(msg, signature.wots.map(hexToBytes), pkHash)) return false;
+        if (!verifyMerkleProof(signature.leaf, signature.proof, rootHex, signature.index, treeHeight)) return false;
+        return true;
+      } catch (err) {
+        return false;
+      }
     }
 
     return {
@@ -863,7 +899,9 @@
     const ageBlocks = Number(utxo.ageBlocks) || 0;
     let score = 0;
     if (exposed) score += 60;
-    if (p2pkh) score += 20;
+    // P2PKH hides the public key behind a hash until the first spend, so its
+    // exposure is latent: it only matters while the key is not yet revealed.
+    if (p2pkh && !exposed) score += 20;
     if (value >= 10) score += 15; else if (value >= 1) score += 8;
     if (ageBlocks > 100000) score += 5;
     score = Math.min(100, score);

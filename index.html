@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PQC Vault Bench | Post-Quantum UTXO Migration Workbench</title>
 <meta name="description" content="A zero-dependency interactive workbench for Kyber NTT arithmetic, Module-LWE key encapsulation, WOTS+ and XMSS hash-based signatures, and Grover/Shor bit-security analysis of UTXO quantum migration.">
+<link rel="icon" href="favicon.png" type="image/png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -34,9 +35,7 @@
 
   <section class="hero">
     <div class="hero-copy">
-      <p class="eyebrow">Post-quantum / UTXO migration / zero dependencies</p>
       <h1>The quantum migration<br>workbench for UTXO chains.</h1>
-      <p class="lede">Inspect real lattice arithmetic, run a Module-LWE key exchange, sign a transaction with stateful hash-based signatures, and quantify what Shor and Grover actually do to a Bitcoin-style public key. Everything runs locally in your browser. Nothing is sent anywhere.</p>
       <div class="hero-actions">
         <a class="btn btn-primary" href="#kem">Run the KEM</a>
         <a class="btn btn-ghost" href="#security">Check Q-Day risk</a>
@@ -44,7 +43,7 @@
       <div class="hero-stats" role="group" aria-label="Workbench facts">
         <div class="stat"><span class="stat-num" id="stat-q">3329</span><span class="stat-label">ring modulus q</span></div>
         <div class="stat"><span class="stat-num" id="stat-n">256</span><span class="stat-label">polynomial degree n</span></div>
-        <div class="stat"><span class="stat-num" id="stat-tests">153</span><span class="stat-label">passing tests</span></div>
+        <div class="stat"><span class="stat-num" id="stat-tests">173</span><span class="stat-label">passing tests</span></div>
         <div class="stat"><span class="stat-num">0</span><span class="stat-label">runtime dependencies</span></div>
       </div>
     </div>
@@ -55,16 +54,15 @@
       </div>
       <div id="hero-chart" class="hero-chart"></div>
       <div class="chart-legend" id="hero-legend"></div>
-      <p class="panel-note">secp256k1 loses all discrete-log security to Shor; lattice and hash-based schemes retain a large quantum work factor.</p>
+      <div class="panel-tags" id="hero-tags"></div>
+      <p class="panel-note">secp256k1 loses all discrete-log security to Shor; lattice and hash-based schemes retain a large quantum work factor. Every figure on this page is computed in your browser; nothing is sent anywhere.</p>
     </div>
   </section>
 
   <!-- ================= NTT ================= -->
   <section id="ntt" class="section">
     <div class="section-head">
-      <span class="kicker">01 / Ring arithmetic</span>
       <h2>Number Theoretic Transform</h2>
-      <p>The speed primitive inside ML-KEM. Polynomials live in Z<sub>3329</sub>[x]/(x<sup>256</sup>+1). Seven Cooley-Tukey stages plus base-case multiplication give exact negacyclic convolution, verified against an O(n<sup>2</sup>) schoolbook reference.</p>
     </div>
     <div class="grid-2">
       <div class="card">
@@ -76,6 +74,7 @@
       </div>
       <div class="card">
         <h3>Controls</h3>
+        <p class="card-sub">Polynomials live in Z<sub>3329</sub>[x]/(x<sup>256</sup>+1). Seven Cooley-Tukey stages plus base-case multiplication give exact negacyclic convolution, verified against an O(n<sup>2</sup>) schoolbook reference.</p>
         <div class="field">
           <label for="ntt-pattern">Input polynomial</label>
           <select id="ntt-pattern">
@@ -105,9 +104,7 @@
   <!-- ================= ML-KEM ================= -->
   <section id="kem" class="section">
     <div class="section-head">
-      <span class="kicker">02 / Module-LWE</span>
       <h2>ML-KEM key encapsulation</h2>
-      <p>A real Module-LWE key exchange over the Kyber ring with centered-binomial error, ciphertext compression and Fujisaki-Okamoto style implicit rejection. Educational parameter sets carry FIPS 203 names; this is not a validated constant-time implementation.</p>
     </div>
     <div class="kem-bar">
       <div class="field inline">
@@ -128,6 +125,7 @@
     <div class="grid-2">
       <div class="card">
         <h3>Shared secret handshake</h3>
+        <p class="card-sub">Real Module-LWE lattice arithmetic over the Kyber ring: centered-binomial error, ciphertext compression, Fujisaki-Okamoto style implicit rejection. Educational parameters carry FIPS 203 names; this is not a validated constant-time implementation.</p>
         <div class="flow" id="kem-flow"></div>
         <div class="hex-block">
           <div class="hex-row"><span>ek</span><code id="kem-ek">-</code></div>
@@ -149,13 +147,12 @@
   <!-- ================= WOTS+ ================= -->
   <section id="wots" class="section">
     <div class="section-head">
-      <span class="kicker">03 / Hash-based signatures, part one</span>
       <h2>WOTS+ one-time signer</h2>
-      <p>Winternitz chains with w=16 turn a 256-bit digest into 67 short hash chains. A checksum stops an attacker from pushing any chain forward. Each key is safe for exactly one message.</p>
     </div>
     <div class="grid-2">
       <div class="card">
         <h3>Sign a message</h3>
+        <p class="card-sub">Winternitz chains with w=16 turn a 256-bit digest into 67 hash chains. A checksum stops an attacker from pushing any chain forward. Each key is safe for exactly one message.</p>
         <div class="field">
           <label for="wots-msg">Message</label>
           <input type="text" id="wots-msg" value="Migrate UTXO to a PQC output" spellcheck="false">
@@ -179,13 +176,12 @@
   <!-- ================= XMSS ================= -->
   <section id="xmss" class="section">
     <div class="section-head">
-      <span class="kicker">04 / Hash-based signatures, part two</span>
       <h2>XMSS Merkle tree</h2>
-      <p>A stateful many-time signature scheme: 2<sup>h</sup> WOTS+ public keys become leaves of a Merkle tree. Every signature carries a leaf index and an authentication path. State is consumed, never reused.</p>
     </div>
     <div class="grid-2">
       <div class="card">
         <h3>Tree state</h3>
+        <p class="card-sub">A stateful many-time scheme: 2<sup>h</sup> WOTS+ public keys become Merkle leaves. Every signature carries a leaf index and an authentication path. State is consumed, never reused.</p>
         <div class="field">
           <label for="xmss-height">Tree height <output id="xmss-height-out">3</output></label>
           <input type="range" id="xmss-height" min="1" max="4" value="3">
@@ -208,13 +204,12 @@
   <!-- ================= SECURITY ================= -->
   <section id="security" class="section">
     <div class="section-head">
-      <span class="kicker">05 / Q-Day readiness</span>
       <h2>Shor, Grover & UTXO exposure</h2>
-      <p>Shor breaks elliptic-curve discrete logs in polynomial time; Grover only halves hash preimage security. Whether a UTXO is exposed depends on whether its public key is already visible on chain.</p>
     </div>
     <div class="grid-2">
       <div class="card">
         <h3>UTXO risk scorer</h3>
+        <p class="card-sub">Shor breaks elliptic-curve discrete logs in polynomial time; Grover only halves hash preimage security. A UTXO is exposed when its public key is visible on chain; P2PKH hides it until first spend.</p>
         <div class="field">
           <label for="risk-value">Value (BTC)</label>
           <input type="number" id="risk-value" value="12.5" min="0" step="0.1">
@@ -241,13 +236,12 @@
   <!-- ================= VERIFICATION ================= -->
   <section id="verification" class="section">
     <div class="section-head">
-      <span class="kicker">06 / Verification telemetry</span>
       <h2>Reduction, correctness and quantum resources</h2>
-      <p>Four analysis modules run real arithmetic over the primitives above: Montgomery and Barrett reduction in the Kyber ring, an NTT algebra certificate, a multi-seed KEM correctness sweep with decryption-failure accounting, and exact byte and quantum-resource tables. Every figure is computed here, not asserted.</p>
     </div>
     <div class="grid-2">
       <div class="card">
         <h3>KEM correctness sweep</h3>
+        <p class="card-sub">A multi-seed sweep counts decryption failures, tamper rejections and wrong-key rejections. Every figure is computed here, not asserted.</p>
         <div class="field inline">
           <label for="verify-param">Parameter set</label>
           <select id="verify-param">
@@ -268,6 +262,7 @@
       </div>
       <div class="card">
         <h3>Certificates and resources</h3>
+        <p class="card-sub">Montgomery and Barrett reduction matched against plain modular reduction, a five-check NTT algebra certificate, and exact byte and quantum-resource tables.</p>
         <div class="readout" id="verify-readout"></div>
         <div class="check-row" id="reduction-checks"></div>
         <h3 class="subhead">KEM byte accounting</h3>
@@ -291,6 +286,7 @@
     <div class="grid-2">
       <div class="card">
         <h3>Testnet RPC and wallet</h3>
+        <p class="card-sub">Probe chainId 44005 read-only, or connect an EIP-1193 wallet on explicit action. Nothing is sent anywhere without a click.</p>
         <div class="field">
           <label for="qday-account">Account address (tUSD8 balanceOf)</label>
           <input type="text" id="qday-account" value="0x0000000000000000000000000000000000000101" spellcheck="false" autocomplete="off">
@@ -310,6 +306,7 @@
       </div>
       <div class="card">
         <h3>PQC Vault Settlement Anchor</h3>
+        <p class="card-sub">A canonical payload binds chainId, token, payer, merchant, spend cap, nonce, deadline and the vault XMSS root; a fifteen-check verifier re-proves every binding before any transaction exists.</p>
         <div class="field">
           <label for="qday-merchant">Merchant recipient address</label>
           <input type="text" id="qday-merchant" value="0x0000000000000000000000000000000000000202" spellcheck="false" autocomplete="off">
@@ -338,6 +335,8 @@
           <button class="btn btn-ghost" id="qday-send" type="button">Simulate / send tUSD8</button>
         </div>
         <div class="hex-block">
+          <div class="hex-row"><span>nonce</span><code id="qday-nonce">-</code></div>
+          <div class="hex-row"><span>deadline</span><code id="qday-deadline">-</code></div>
           <div class="hex-row"><span>calldata</span><code id="qday-calldata">-</code></div>
           <div class="hex-row"><span>attest</span><code id="qday-attest">-</code></div>
           <div class="hex-row"><span>receipt</span><code id="qday-receipt">-</code></div>
@@ -353,11 +352,10 @@
   <!-- ================= VECTORS ================= -->
   <section id="vectors" class="section">
     <div class="section-head">
-      <span class="kicker">07 / Reproducibility</span>
       <h2>Deterministic hex test vectors</h2>
-      <p>Everything in this workbench is seeded. Export a JSON bundle of NTT tables, KEM handshakes, WOTS/XMSS artifacts and the security table, or the full verification bundle with every self check, then reproduce it byte for byte.</p>
     </div>
     <div class="card">
+      <p class="card-sub">Everything in this workbench is seeded. Export a JSON bundle of NTT tables, KEM handshakes, WOTS/XMSS artifacts and the security table, or the full verification bundle with every self check, then reproduce it byte for byte.</p>
       <div class="btn-row">
         <button class="btn btn-primary" id="vec-run" type="button">Generate vectors</button>
         <button class="btn btn-ghost" id="vec-verify" type="button">Verification bundle</button>

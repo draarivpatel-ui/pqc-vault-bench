@@ -118,3 +118,53 @@ test('COMPLIANCE 10: the page makes no network requests', () => {
   const html = read('index.html').replace(/<script[\s\S]*?<\/script>/g, '');
   assert.equal(/https?:\/\//.test(html), false);
 });
+
+test('COMPLIANCE 11: no smooth-scroll behavior and no banned title furniture', () => {
+  const css = read('style.css');
+  assert.equal(/scroll-behavior/.test(css), false);
+  const html = read('index.html');
+  assert.equal(/class="(?:eyebrow|kicker|lede)"/.test(html), false);
+  // Titles stand alone: every section-head holds only its h2.
+  const heads = html.match(/<div class="section-head">[\s\S]*?<\/div>/g) || [];
+  assert.ok(heads.length >= 6, 'expected at least six section heads');
+  for (const h of heads) {
+    assert.equal(/<p[\s>]/.test(h), false, h.slice(0, 80));
+    assert.equal(/<span[^>]*kicker/.test(h), false, h.slice(0, 80));
+  }
+});
+
+test('COMPLIANCE 12: hero stat test count matches the README total', () => {
+  const readme = read('README.md');
+  const m = readme.match(/(\d+) passing (?:unit )?tests/);
+  assert.ok(m, 'README states a passing test count');
+  const html = read('index.html');
+  assert.match(html, new RegExp('id="stat-tests">' + m[1] + '<'),
+    'index.html stat-tests must equal the README total');
+});
+
+test('COMPLIANCE 13: settlement verification binds txRequest, nonce, deadline and XMSS root', () => {
+  const src = read('src/qday-aevum.js');
+  for (const k of ['txRequestOk', 'nonceOk', 'deadlineOk', 'xmssRootOk', 'schemaOk', 'addressesOk', 'displayOk']) {
+    assert.match(src, new RegExp(k), 'missing check ' + k);
+  }
+  // The wallet-facing spend path consumes verified payload fields only.
+  assert.match(src, /data: anchor\.payload\.calldata/);
+  assert.match(src, /from: anchor\.payload\.payer/);
+});
+
+test('COMPLIANCE 14: simulated sends are honestly labeled, never fabricated hashes', () => {
+  const src = read('src/qday-aevum.js');
+  assert.match(src, /simulated: true/);
+  assert.match(src, /txHash: null/);
+  assert.match(src, /explorerUrl: null/);
+  const app = read('app.js');
+  assert.match(app, /nothing broadcast/i);
+});
+
+test('COMPLIANCE 15: the favicon is a local asset, not a remote request', () => {
+  const html = read('index.html');
+  const m = html.match(/<link rel="icon" href="([^"]+)"/);
+  assert.ok(m, 'a favicon link is required to avoid a 404');
+  assert.equal(/^(https?|data):/.test(m[1]), false);
+  assert.ok(fs.existsSync(path.join(root, m[1])), m[1] + ' must exist');
+});
