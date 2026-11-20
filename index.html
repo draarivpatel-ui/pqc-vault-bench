@@ -22,6 +22,8 @@
       <a href="#wots">WOTS+</a>
       <a href="#xmss">XMSS</a>
       <a href="#security">Q-Day</a>
+      <a href="#verification">Verify</a>
+      <a href="#qday">Aevum</a>
       <a href="#vectors">Vectors</a>
     </nav>
     <button id="theme-toggle" class="theme-btn" type="button" aria-label="Toggle light or dark theme">Light</button>
@@ -42,7 +44,7 @@
       <div class="hero-stats" role="group" aria-label="Workbench facts">
         <div class="stat"><span class="stat-num" id="stat-q">3329</span><span class="stat-label">ring modulus q</span></div>
         <div class="stat"><span class="stat-num" id="stat-n">256</span><span class="stat-label">polynomial degree n</span></div>
-        <div class="stat"><span class="stat-num" id="stat-tests">94</span><span class="stat-label">passing unit tests</span></div>
+        <div class="stat"><span class="stat-num" id="stat-tests">153</span><span class="stat-label">passing tests</span></div>
         <div class="stat"><span class="stat-num">0</span><span class="stat-label">runtime dependencies</span></div>
       </div>
     </div>
@@ -236,19 +238,133 @@
     </div>
   </section>
 
+  <!-- ================= VERIFICATION ================= -->
+  <section id="verification" class="section">
+    <div class="section-head">
+      <span class="kicker">06 / Verification telemetry</span>
+      <h2>Reduction, correctness and quantum resources</h2>
+      <p>Four analysis modules run real arithmetic over the primitives above: Montgomery and Barrett reduction in the Kyber ring, an NTT algebra certificate, a multi-seed KEM correctness sweep with decryption-failure accounting, and exact byte and quantum-resource tables. Every figure is computed here, not asserted.</p>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>KEM correctness sweep</h3>
+        <div class="field inline">
+          <label for="verify-param">Parameter set</label>
+          <select id="verify-param">
+            <option value="toy-64">Toy (k=2)</option>
+            <option value="ML-KEM-512">ML-KEM-512</option>
+            <option value="ML-KEM-768" selected>ML-KEM-768</option>
+            <option value="ML-KEM-1024">ML-KEM-1024</option>
+          </select>
+        </div>
+        <div class="field inline">
+          <label for="verify-seeds">Independent seeds <output id="verify-seeds-out">12</output></label>
+          <input type="range" id="verify-seeds" min="4" max="48" step="4" value="12">
+        </div>
+        <button class="btn btn-primary" id="verify-run" type="button">Run sweep</button>
+        <div class="check-row" id="verify-checks"></div>
+        <div id="verify-chart" class="chart"></div>
+        <div class="chart-legend" id="verify-legend"></div>
+      </div>
+      <div class="card">
+        <h3>Certificates and resources</h3>
+        <div class="readout" id="verify-readout"></div>
+        <div class="check-row" id="reduction-checks"></div>
+        <h3 class="subhead">KEM byte accounting</h3>
+        <div class="table-wrap"><table id="size-table" class="data-table"><caption class="sr-only">Exact byte lengths for each ML-KEM parameter set</caption></table></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Hybrid migration envelope</h3>
+      <p class="card-sub">Pairing a classical primitive with a post-quantum one. The classical half still falls to Shor, so the quantum column is the surviving envelope.</p>
+      <div id="hybrid-chart" class="chart"></div>
+      <div class="chart-legend" id="hybrid-legend"></div>
+      <div class="table-wrap"><table id="hybrid-table" class="data-table"><caption class="sr-only">Hybrid migration bit-security table</caption></table></div>
+    </div>
+  </section>
+
+  <!-- ================= QDAY AEVUM ================= -->
+  <section id="qday" class="section">
+    <div class="section-head">
+      <h2>QDay Aevum Testnet (tUSD8)</h2>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Testnet RPC and wallet</h3>
+        <div class="field">
+          <label for="qday-account">Account address (tUSD8 balanceOf)</label>
+          <input type="text" id="qday-account" value="0x0000000000000000000000000000000000000101" spellcheck="false" autocomplete="off">
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="qday-probe" type="button">Probe Aevum RPC</button>
+          <button class="btn btn-ghost" id="qday-connect" type="button">Connect wallet</button>
+          <button class="btn btn-ghost" id="qday-switch" type="button">Add / switch Aevum</button>
+        </div>
+        <div class="check-row" id="qday-net-checks" aria-live="polite"></div>
+        <div class="readout" id="qday-net-readout"></div>
+        <div class="qday-links" aria-label="Official QDay testnet links">
+          <a id="qday-explorer-link" class="chip" href="#" target="_blank" rel="noopener noreferrer">Explorer</a>
+          <a id="qday-token-link" class="chip" href="#" target="_blank" rel="noopener noreferrer">tUSD8 contract</a>
+          <a id="qday-faucet-link" class="chip" href="#" target="_blank" rel="noopener noreferrer">Testnet faucet</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>PQC Vault Settlement Anchor</h3>
+        <div class="field">
+          <label for="qday-merchant">Merchant recipient address</label>
+          <input type="text" id="qday-merchant" value="0x0000000000000000000000000000000000000202" spellcheck="false" autocomplete="off">
+        </div>
+        <div class="qday-field-row">
+          <div class="field">
+            <label for="qday-amount">Amount (tUSD8)</label>
+            <input type="text" id="qday-amount" value="25.00" inputmode="decimal" spellcheck="false">
+          </div>
+          <div class="field">
+            <label for="qday-cap">Spend cap (tUSD8)</label>
+            <input type="text" id="qday-cap" value="100.00" inputmode="decimal" spellcheck="false">
+          </div>
+        </div>
+        <div class="field">
+          <label for="qday-kem-param">Attestation KEM profile</label>
+          <select id="qday-kem-param">
+            <option value="ML-KEM-512">ML-KEM-512 + ML-DSA-65 / XMSS</option>
+            <option value="ML-KEM-768" selected>ML-KEM-768 + ML-DSA-65 / XMSS</option>
+            <option value="ML-KEM-1024">ML-KEM-1024 + ML-DSA-65 / XMSS</option>
+          </select>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="qday-anchor-build" type="button">Build and verify anchor</button>
+          <button class="btn btn-ghost" id="qday-anchor-tamper" type="button">Tamper check</button>
+          <button class="btn btn-ghost" id="qday-send" type="button">Simulate / send tUSD8</button>
+        </div>
+        <div class="hex-block">
+          <div class="hex-row"><span>calldata</span><code id="qday-calldata">-</code></div>
+          <div class="hex-row"><span>attest</span><code id="qday-attest">-</code></div>
+          <div class="hex-row"><span>receipt</span><code id="qday-receipt">-</code></div>
+          <div class="hex-row"><span>commit</span><code id="qday-commit">-</code></div>
+          <div class="hex-row"><span>xmss root</span><code id="qday-xmss-root">-</code></div>
+        </div>
+        <div class="check-row" id="qday-anchor-checks" aria-live="polite"></div>
+        <div class="verdict" id="qday-verdict" role="status">Ready to build and verify a tUSD8 settlement anchor on chain 44005.</div>
+      </div>
+    </div>
+  </section>
+
   <!-- ================= VECTORS ================= -->
   <section id="vectors" class="section">
     <div class="section-head">
-      <span class="kicker">06 / Reproducibility</span>
+      <span class="kicker">07 / Reproducibility</span>
       <h2>Deterministic hex test vectors</h2>
-      <p>Everything in this workbench is seeded. Export a JSON bundle of NTT tables, KEM handshakes, WOTS/XMSS artifacts and the security table, then reproduce it byte for byte.</p>
+      <p>Everything in this workbench is seeded. Export a JSON bundle of NTT tables, KEM handshakes, WOTS/XMSS artifacts and the security table, or the full verification bundle with every self check, then reproduce it byte for byte.</p>
     </div>
     <div class="card">
       <div class="btn-row">
         <button class="btn btn-primary" id="vec-run" type="button">Generate vectors</button>
+        <button class="btn btn-ghost" id="vec-verify" type="button">Verification bundle</button>
         <button class="btn btn-ghost" id="vec-copy" type="button">Copy JSON</button>
         <button class="btn btn-ghost" id="vec-download" type="button">Download .json</button>
       </div>
+      <div class="check-row" id="vec-checks" aria-live="polite"></div>
       <pre id="vec-output" class="code-block" aria-label="Test vector JSON">Press "Generate vectors" to build the deterministic bundle.</pre>
     </div>
   </section>
@@ -263,6 +379,8 @@
 </footer>
 
 <script src="src/pqc.js"></script>
+<script src="src/analysis.js"></script>
+<script src="src/qday-aevum.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

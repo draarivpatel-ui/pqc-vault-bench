@@ -2,6 +2,8 @@
 (function () {
   'use strict';
   const P = window.PQC;
+  const A = window.PQCAnalysis;
+  const Q = window.QDayAevum;
   const $ = id => document.getElementById(id);
   const NS = 'http://www.w3.org/2000/svg';
 
@@ -435,27 +437,351 @@
   }
   ['risk-value', 'risk-age', 'risk-exposed', 'risk-p2pkh'].forEach(id => $(id).addEventListener('input', renderRisk));
 
+  // ---- verification telemetry ---------------------------------------------
+  function chips(containerId, items) {
+    const c = $(containerId);
+    if (!c) return;
+    c.innerHTML = '';
+    for (const it of items) {
+      const s = document.createElement('span');
+      s.className = 'chip ' + it.tone;
+      s.textContent = it.t;
+      c.appendChild(s);
+    }
+  }
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function dataTable(containerId, headers, rows) {
+    const t = $(containerId);
+    if (!t) return;
+    const head = '<thead><tr>' + headers.map(h => '<th scope="col">' + esc(h) + '</th>').join('') + '</tr></thead>';
+    const body = '<tbody>' + rows.map(r => '<tr>' + r.map(v =>
+      '<td' + (typeof v === 'number' ? ' class="num"' : '') + '>' + esc(v) + '</td>').join('') + '</tr>').join('') + '</tbody>';
+    t.innerHTML = head + body;
+  }
+
+  function renderVerification() {
+    const param = $('verify-param').value;
+    const seedCount = Number($('verify-seeds').value);
+    $('verify-seeds-out').textContent = String(seedCount);
+    const sweep = A.kemCorrectnessSweep({ param, count: seedCount, seed: 'bench:' + param });
+    const reduction = A.reductionCertificate(256);
+    const ntt = A.nttCertificate();
+    const sizes = A.hashSignatureSizes('bench:wots', 3);
+
+    // The sweep chart shows per-seed outcomes: matched, tamper rejected and
+    // wrong-key rejected all come from the real sweep, so the bars agree.
+    groupedBars('verify-chart', [
+      { label: 'shared secrets matched', values: [sweep.matched] },
+      { label: 'tampered ciphertexts rejected', values: [sweep.tamperRejections] },
+      { label: 'wrong-key decaps rejected', values: [sweep.wrongKeyRejections] },
+      { label: 'decryption failures', values: [sweep.decryptionFailures] }
+    ], [{ label: 'seeds out of ' + seedCount, color: SERIES[0] }],
+      { max: seedCount, ticks: 4, padL: 210, rowH: 30, directLabels: true });
+    legend('verify-legend', [{ label: 'outcome count over independent seeds', color: SERIES[0] }]);
+
+    chips('verify-checks', [
+      { t: 'correctness ' + sweep.matched + '/' + sweep.count, tone: sweep.decryptionFailures === 0 ? 'ok' : 'bad' },
+      { t: 'FO implicit rejection ' + sweep.tamperRejections + '/' + sweep.count, tone: sweep.tamperRejections === sweep.count ? 'ok' : 'bad' },
+      { t: 'wrong-key rejection ' + sweep.wrongKeyRejections + '/' + sweep.count, tone: sweep.wrongKeyRejections === sweep.count ? 'ok' : 'bad' },
+      { t: 'ct ' + sweep.avgCiphertextBytes + ' B / ek ' + sweep.avgEncapsulationKeyBytes + ' B', tone: 'info' }
+    ]);
+
+    $('verify-readout').innerHTML = '';
+    const rows = [
+      ['Montgomery matches / 256', reduction.montgomeryMatches + ' / 256'],
+      ['Barrett matches / 256', reduction.barrettMatches + ' / 256'],
+      ['N_PRIME (q*n = -1 mod 2^16)', String(A.N_PRIME)],
+      ['NTT certificate (5 checks)', ntt.allPass ? 'all pass' : 'FAIL'],
+      ['WOTS+ signature bytes', String(sizes.wots.signatureBytes)],
+      ['XMSS signature bytes (h=3)', String(sizes.xmss.signatureBytes)],
+      ['Shor logical qubits (256-bit)', P.shorQubits(256).toLocaleString()]
+    ];
+    for (const [k, v] of rows) {
+      const d = document.createElement('div');
+      d.innerHTML = '<span>' + esc(k) + '</span><b>' + esc(v) + '</b>';
+      $('verify-readout').appendChild(d);
+    }
+    chips('reduction-checks', [
+      { t: 'Montgomery == mod: ' + (reduction.allMatch ? 'OK' : 'FAIL'), tone: reduction.allMatch ? 'ok' : 'bad' },
+      { t: 'Barrett == mod: ' + (reduction.allMatch ? 'OK' : 'FAIL'), tone: reduction.allMatch ? 'ok' : 'bad' },
+      { t: 'x^256 = -1: ' + (ntt.negacyclic ? 'OK' : 'FAIL'), tone: ntt.negacyclic ? 'ok' : 'bad' }
+    ]);
+
+    const sizeRows = A.kemSizeTable().map(r => [
+      r.name, r.k, r.du + '/' + r.dv, r.encapsulationKeyBytes, r.ciphertextBytes, r.ciphertextBytes === r.expectedCiphertextBytes ? 'OK' : 'FAIL'
+    ]);
+    dataTable('size-table', ['param', 'k', 'du/dv', 'ek B', 'ct B', 'derived'], sizeRows);
+
+    const hybrid = A.hybridMigrationTable();
+    groupedBars('hybrid-chart', hybrid.map(r => ({
+      label: r.classical.replace('secp256k1 ', 'EC ') + ' + ' + r.postQuantum.replace('ML-', '').replace('SLH-DSA-', 'SLH-'),
+      values: [r.classicalBits, r.quantumBits]
+    })), [{ label: 'classical bits', color: SERIES[0] }, { label: 'quantum bits', color: SERIES[1] }],
+      { max: 256, ticks: 4, padL: 150, rowH: 26 });
+    legend('hybrid-legend', [
+      { label: 'classical bit security', color: SERIES[0] },
+      { label: 'post-quantum bit security', color: SERIES[1] }
+    ]);
+    dataTable('hybrid-table', ['classical', 'post-quantum', 'classical bits', 'quantum bits', 'Shor on classical half'],
+      hybrid.map(r => [r.classical, r.postQuantum, r.classicalBits, r.quantumBits, r.classicalHalfBrokenBy]));
+  }
+  $('verify-run').addEventListener('click', renderVerification);
+  $('verify-param').addEventListener('change', renderVerification);
+  $('verify-seeds').addEventListener('input', renderVerification);
+
   // ---- vectors ------------------------------------------------------------
   let vectorJSON = '';
-  $('vec-run').addEventListener('click', () => {
-    vectorJSON = JSON.stringify(P.exportTestVectors($('kem-seed').value || 'pqc-vault-bench-demo'), null, 2);
+  let vectorName = 'pqc-vault-bench-vectors.json';
+  function vectorChips(bundle) {
+    if (!bundle || !bundle.selfChecks) {
+      chips('vec-checks', [{ t: '8 self checks in the core vector bundle', tone: 'info' }]);
+      return;
+    }
+    const entries = Object.entries(bundle.selfChecks);
+    const passing = entries.filter(([, v]) => v === true).length;
+    chips('vec-checks', [
+      { t: 'self checks ' + passing + '/' + entries.length, tone: passing === entries.length ? 'ok' : 'bad' },
+      { t: 'KEM sweep ' + bundle.kem.matched + '/' + bundle.kem.count, tone: bundle.kem.decryptionFailures === 0 ? 'ok' : 'bad' },
+      { t: 'reduction ' + bundle.reduction.montgomeryMatches + '/' + bundle.reduction.samples, tone: bundle.reduction.allMatch === undefined ? (bundle.reduction.montgomeryMatches === bundle.reduction.samples ? 'ok' : 'bad') : 'ok' }
+    ]);
+  }
+  function buildVectors(full) {
+    const seed = $('kem-seed').value || 'pqc-vault-bench-demo';
+    const bundle = full ? A.verificationBundle(seed) : P.exportTestVectors(seed);
+    vectorJSON = JSON.stringify(bundle, null, 2);
+    vectorName = full ? 'pqc-vault-bench-verification.json' : 'pqc-vault-bench-vectors.json';
     $('vec-output').textContent = vectorJSON;
-  });
+    vectorChips(bundle);
+  }
+  $('vec-run').addEventListener('click', () => buildVectors(false));
+  $('vec-verify').addEventListener('click', () => buildVectors(true));
   $('vec-copy').addEventListener('click', () => {
     if (!vectorJSON) { $('vec-output').textContent = 'Press "Generate vectors" first.'; return; }
-    navigator.clipboard.writeText(vectorJSON).then(() => {
-      $('vec-output').textContent = vectorJSON;
-    }).catch(() => { /* clipboard unavailable in some contexts */ });
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(vectorJSON).catch(() => {
+        $('vec-output').textContent = vectorJSON;
+      });
+    }
   });
   $('vec-download').addEventListener('click', () => {
     if (!vectorJSON) { $('vec-output').textContent = 'Press "Generate vectors" first.'; return; }
     const blob = new Blob([vectorJSON], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'pqc-vault-bench-vectors.json';
+    a.download = vectorName;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
+
+  // ---- QDay / Aevum testnet (tUSD8) ---------------------------------------
+  let qdayAnchor = null;
+  let qdayWalletState = null;
+
+  function renderQdayProbe(probe) {
+    if (!Q || !$('qday-net-readout')) return;
+    $('qday-net-readout').innerHTML = '';
+    const rows = [
+      ['network', Q.NETWORK.name],
+      ['chainId', probe.chainId + ' (' + probe.chainIdHex + ')'],
+      ['mode', probe.live ? 'live JSON-RPC' : 'offline simulation'],
+      ['block height', String(probe.blockNumber)],
+      ['tUSD8 contract', Q.CONTRACTS.tUSD8.address.slice(0, 14) + '...' + Q.CONTRACTS.tUSD8.address.slice(-6)],
+      ['token', probe.token.symbol + ' (' + probe.token.decimals + ' decimals)'],
+      ['total supply', probe.token.totalSupplyFormatted + ' ' + probe.token.symbol],
+      ['account balance', (probe.accountBalanceFormatted !== null ? probe.accountBalanceFormatted : 'n/a') + ' ' + probe.token.symbol]
+    ];
+    for (const [k, v] of rows) {
+      const d = document.createElement('div');
+      d.innerHTML = '<span>' + esc(k) + '</span><b>' + esc(v) + '</b>';
+      $('qday-net-readout').appendChild(d);
+    }
+    const netChips = [
+      { t: probe.live ? 'RPC live' : 'offline simulation', tone: probe.live ? 'ok' : 'info' },
+      { t: 'chainId ' + probe.chainId + (probe.chainIdMatches ? ': OK' : ': MISMATCH'), tone: probe.chainIdMatches ? 'ok' : 'bad' },
+      { t: probe.token.symbol + ' / ' + probe.token.decimals + ' dec', tone: 'ok' }
+    ];
+    if (qdayWalletState && qdayWalletState.connected) {
+      netChips.push({
+        t: 'wallet ' + qdayWalletState.account.slice(0, 8) + '...',
+        tone: qdayWalletState.onAevum ? 'ok' : 'info'
+      });
+    }
+    chips('qday-net-checks', netChips);
+  }
+
+  function renderQdayAnchor(anchor, verification, customVerdict) {
+    if (!Q || !$('qday-calldata')) return;
+    $('qday-calldata').textContent = anchor.payload.calldata;
+    $('qday-attest').textContent = anchor.attestation.attestationHash;
+    $('qday-receipt').textContent = anchor.receiptHash;
+    $('qday-commit').textContent = anchor.commitmentHash;
+    $('qday-xmss-root').textContent = '0x' + anchor.signature.root;
+
+    const c = verification.checks;
+    chips('qday-anchor-checks', [
+      { t: 'chain 44005: ' + (c.chainOk ? 'OK' : 'FAIL'), tone: c.chainOk ? 'ok' : 'bad' },
+      { t: 'spend cap: ' + (c.spendCapOk ? 'OK' : 'FAIL'), tone: c.spendCapOk ? 'ok' : 'bad' },
+      { t: 'ERC-20 calldata: ' + (c.calldataOk ? 'OK' : 'FAIL'), tone: c.calldataOk ? 'ok' : 'bad' },
+      { t: 'PQC attest: ' + (c.attestationOk ? 'OK' : 'FAIL'), tone: c.attestationOk ? 'ok' : 'bad' },
+      { t: 'receipt hash: ' + (c.receiptHashOk ? 'OK' : 'FAIL'), tone: c.receiptHashOk ? 'ok' : 'bad' },
+      { t: 'XMSS sig: ' + (c.pqcSignatureOk ? 'OK' : 'FAIL'), tone: c.pqcSignatureOk ? 'ok' : 'bad' }
+    ]);
+
+    if (customVerdict) {
+      setVerdict('qday-verdict', customVerdict, verification.valid);
+    } else if (verification.valid) {
+      setVerdict(
+        'qday-verdict',
+        'Verified: ' + anchor.payload.amountTusd8 + ' tUSD8 transfer anchored to ' +
+        anchor.attestation.kemParam + ' + XMSS (risk ' + anchor.attestation.riskScore + '/100 ' +
+        anchor.attestation.riskTier + ').',
+        true
+      );
+    } else {
+      setVerdict('qday-verdict', 'Verification failed: ' + verification.errors.join('; '), false);
+    }
+  }
+
+  function buildQdayAnchorFromUI() {
+    if (!Q || !$('qday-merchant')) return;
+    try {
+      const payer = ($('qday-account').value || '').trim() || Q.DEMO_ADDRESSES.payer;
+      const merchant = ($('qday-merchant').value || '').trim();
+      const amountTusd8 = ($('qday-amount').value || '').trim();
+      const spendCapTusd8 = ($('qday-cap').value || '').trim();
+      const kemParam = $('qday-kem-param').value;
+      const seed = ($('kem-seed') ? $('kem-seed').value : '') || 'pqc-vault-bench-demo';
+      const riskInput = {
+        publicKeyRevealed: $('risk-exposed') ? $('risk-exposed').checked : true,
+        p2pkh: $('risk-p2pkh') ? $('risk-p2pkh').checked : false,
+        valueBtc: $('risk-value') ? Number($('risk-value').value) : 2.5,
+        ageBlocks: $('risk-age') ? Number($('risk-age').value) : 50000
+      };
+      qdayAnchor = Q.createSettlementAnchor({
+        payer,
+        merchant,
+        amountTusd8,
+        spendCapTusd8,
+        kemParam,
+        seed,
+        riskInput
+      });
+      const v = Q.verifySettlementAnchor(qdayAnchor);
+      renderQdayAnchor(qdayAnchor, v);
+    } catch (err) {
+      setVerdict('qday-verdict', 'Input error: ' + err.message, false);
+    }
+  }
+
+  function initQdayLinks() {
+    if (!Q) return;
+    if ($('qday-explorer-link')) $('qday-explorer-link').href = Q.NETWORK.explorerUrl;
+    if ($('qday-token-link')) $('qday-token-link').href = Q.explorerTokenUrl(Q.CONTRACTS.tUSD8.address);
+    if ($('qday-faucet-link')) $('qday-faucet-link').href = Q.NETWORK.faucetUrl;
+  }
+
+  function renderQdayInitial() {
+    if (!Q || !$('qday-net-readout')) return;
+    initQdayLinks();
+    const acct = ($('qday-account').value || '').trim();
+    renderQdayProbe(Q.simulateTestnetProbe({
+      account: Q.isValidAddress(acct) ? acct : Q.DEMO_ADDRESSES.payer,
+      fallbackReason: 'Press Probe Aevum RPC to query live testnet'
+    }));
+    buildQdayAnchorFromUI();
+  }
+
+  if (Q && $('qday-probe')) {
+    $('qday-probe').addEventListener('click', async () => {
+      setVerdict('qday-verdict', 'Probing QDay Aevum testnet RPC (chainId 44005)...', null);
+      const acct = ($('qday-account').value || '').trim();
+      const res = await Q.probeTestnet({ account: Q.isValidAddress(acct) ? acct : null });
+      renderQdayProbe(res);
+      if (res.live) {
+        setVerdict(
+          'qday-verdict',
+          'Live RPC verified: chainId ' + res.chainId + ', block ' + res.blockNumber + ', token ' +
+          res.token.symbol + ' (' + res.token.decimals + ' decimals).',
+          true
+        );
+      } else {
+        setVerdict(
+          'qday-verdict',
+          'Live RPC unreachable (' + res.fallbackReason + '). Deterministic offline simulation active.',
+          null
+        );
+      }
+    });
+
+    $('qday-connect').addEventListener('click', async () => {
+      try {
+        const res = await Q.connectWallet(window.ethereum);
+        qdayWalletState = res;
+        if (res.account) $('qday-account').value = res.account;
+        buildQdayAnchorFromUI();
+        setVerdict(
+          'qday-verdict',
+          res.connected
+            ? 'Wallet connected: ' + res.account + ' (chain ' + res.chainId + ').'
+            : res.reason,
+          res.connected ? true : null
+        );
+      } catch (err) {
+        setVerdict('qday-verdict', 'Wallet connection declined: ' + err.message, false);
+      }
+    });
+
+    $('qday-switch').addEventListener('click', async () => {
+      try {
+        const res = await Q.ensureAevumNetwork(window.ethereum);
+        setVerdict(
+          'qday-verdict',
+          res.switched
+            ? (res.added ? 'Added and switched wallet to QDay Aevum Testnet (44005).' : 'Switched wallet to QDay Aevum Testnet (44005).')
+            : 'No browser wallet detected. Chain 44005 parameters ready in simulation mode.',
+          res.switched ? true : null
+        );
+      } catch (err) {
+        setVerdict('qday-verdict', 'Network switch failed: ' + err.message, false);
+      }
+    });
+
+    $('qday-anchor-build').addEventListener('click', buildQdayAnchorFromUI);
+    $('qday-kem-param').addEventListener('change', buildQdayAnchorFromUI);
+
+    $('qday-anchor-tamper').addEventListener('click', () => {
+      if (!qdayAnchor) buildQdayAnchorFromUI();
+      if (!qdayAnchor) return;
+      const tampered = JSON.parse(JSON.stringify(qdayAnchor));
+      tampered.payload.amountRaw = (BigInt(tampered.payload.amountRaw) + 1n).toString(10);
+      const v = Q.verifySettlementAnchor(tampered);
+      renderQdayAnchor(
+        tampered,
+        v,
+        'Tamper detected: altering amount by 1 base unit broke calldata, receipt hash, and XMSS signature checks.'
+      );
+    });
+
+    $('qday-send').addEventListener('click', async () => {
+      buildQdayAnchorFromUI();
+      if (!qdayAnchor) return;
+      try {
+        const res = await Q.sendTusd8Transfer(window.ethereum, qdayAnchor);
+        const box = $('qday-verdict');
+        box.className = 'verdict good';
+        const prefix = res.simulated
+          ? 'Simulated tUSD8 settlement (no wallet connected): '
+          : 'Submitted tUSD8 transfer on Aevum testnet: ';
+        box.innerHTML = esc(prefix) +
+          '<a href="' + esc(res.explorerUrl) + '" target="_blank" rel="noopener noreferrer">' +
+          esc(res.txHash) + '</a>';
+      } catch (err) {
+        setVerdict('qday-verdict', 'Transfer aborted: ' + err.message, false);
+      }
+    });
+  }
 
   function renderAll() {
     heroSecurity();
@@ -464,6 +790,8 @@
     renderWOTS();
     renderXMSS(true);
     renderSecurity();
+    renderVerification();
+    renderQdayInitial();
   }
   renderAll();
 })();
