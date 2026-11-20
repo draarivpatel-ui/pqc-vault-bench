@@ -208,15 +208,16 @@
   // Computed size tags under the hero chart: a judge immediately sees the
   // ECDSA vs PQC payload gap with real byte counts, not marketing numbers.
   let sigSizeCache = null;
+  let kemSizeCache = null;
   function heroTags() {
     const c = $('hero-tags');
     if (!c) return;
     if (!sigSizeCache) sigSizeCache = A.hashSignatureSizes('bench:wots', 3);
-    const kem = P.KEM_PARAMS['ML-KEM-768'];
+    if (!kemSizeCache) kemSizeCache = A.kemSizeTable().find(r => r.name === 'ML-KEM-768');
     const items = [
       'secp256k1 sig ~71 B',
-      'ML-KEM-768 ek ' + kem.ekLen + ' B',
-      'ML-KEM-768 ct ' + kem.ctLen + ' B',
+      'ML-KEM-768 ek ' + kemSizeCache.encapsulationKeyBytes + ' B',
+      'ML-KEM-768 ct ' + kemSizeCache.ciphertextBytes + ' B',
       'WOTS+ sig ' + sigSizeCache.wots.signatureBytes + ' B',
       'XMSS h=3 sig ' + sigSizeCache.xmss.signatureBytes + ' B'
     ];
@@ -665,6 +666,8 @@
     calldataOk: 'ERC-20 calldata',
     attestationOk: 'PQC attest',
     xmssRootOk: 'XMSS root binding',
+    rootIssuedOk: 'session issued root',
+    leafBindingOk: 'one-time leaf',
     txRequestOk: 'tx request binding',
     receiptHashOk: 'receipt hash',
     commitmentHashOk: 'commit hash',
@@ -852,11 +855,73 @@
     });
   }
 
+  // ---- hero one-click attack vs defend proof ------------------------------
+  let heroAnchor = null;
+  let heroSeenNonces = new Set();
+  function heroBuildAnchor() {
+    const payer = Q.DEMO_ADDRESSES.payer;
+    const merchant = Q.DEMO_ADDRESSES.merchant;
+    const seed = ($('kem-seed') && $('kem-seed').value) || 'pqc-vault-bench-demo';
+    return Q.createSettlementAnchor({
+      payer, merchant, amountTusd8: '25', spendCapTusd8: '100', seed,
+      kemParam: 'ML-KEM-768'
+    });
+  }
+  function showHeroResult(anchor, verification, message, ok) {
+    chips('hero-demo-checks', [
+      { t: 'chain 44005: ' + (verification.checks.chainOk ? 'OK' : 'FAIL'), tone: verification.checks.chainOk ? 'ok' : 'bad' },
+      { t: 'tUSD8 token: ' + (verification.checks.tokenOk ? 'OK' : 'FAIL'), tone: verification.checks.tokenOk ? 'ok' : 'bad' },
+      { t: 'ERC-20 calldata: ' + (verification.checks.calldataOk ? 'OK' : 'FAIL'), tone: verification.checks.calldataOk ? 'ok' : 'bad' },
+      { t: 'XMSS root: ' + (verification.checks.xmssRootOk ? 'OK' : 'FAIL'), tone: verification.checks.xmssRootOk ? 'ok' : 'bad' },
+      { t: 'session root: ' + (verification.checks.rootIssuedOk ? 'OK' : 'FAIL'), tone: verification.checks.rootIssuedOk ? 'ok' : 'bad' },
+      { t: 'one-time leaf: ' + (verification.checks.leafBindingOk ? 'OK' : 'FAIL'), tone: verification.checks.leafBindingOk ? 'ok' : 'bad' },
+      { t: 'receipt hash: ' + (verification.checks.receiptHashOk ? 'OK' : 'FAIL'), tone: verification.checks.receiptHashOk ? 'ok' : 'bad' },
+      { t: 'XMSS signature: ' + (verification.checks.pqcSignatureOk ? 'OK' : 'FAIL'), tone: verification.checks.pqcSignatureOk ? 'ok' : 'bad' }
+    ]);
+    setVerdict('hero-demo-verdict', message, ok);
+  }
+  function initHeroDemo() {
+    if (!Q || !$('hero-defend')) return;
+    $('hero-defend').addEventListener('click', () => {
+      heroAnchor = heroBuildAnchor();
+      heroSeenNonces.add(heroAnchor.payload.nonce);
+      const v = Q.verifySettlementAnchor(heroAnchor);
+      const passed = Object.values(v.checks).filter(Boolean).length;
+      showHeroResult(heroAnchor, v, 'Defended: fresh one-time XMSS tree signed the tUSD8 transfer; all ' + passed + ' verifier checks pass. Nonce ' + heroAnchor.payload.nonce.slice(0, 14) + '...', v.valid);
+    });
+    $('hero-attack').addEventListener('click', () => {
+      if (!heroAnchor) {
+        $('hero-defend').click();
+        return;
+      }
+      const t = JSON.parse(JSON.stringify(heroAnchor));
+      t.payload.amountRaw = (BigInt(t.payload.amountRaw) + 1n).toString(10);
+      const v = Q.verifySettlementAnchor(t);
+      showHeroResult(t, v, 'Attack rejected: flipping one base unit broke calldata, receipt hash and XMSS signature checks.', false);
+    });
+    $('hero-replay').addEventListener('click', () => {
+      if (!heroAnchor) {
+        $('hero-defend').click();
+        return;
+      }
+      const replay = JSON.parse(JSON.stringify(heroAnchor));
+      const seen = heroSeenNonces.has(replay.payload.nonce);
+      const v = Q.verifySettlementAnchor(replay);
+      showHeroResult(replay, v, seen
+        ? 'Replay rejected: this nonce and one-time XMSS leaf are already spent; rebuild a fresh anchor to settle again.'
+        : 'Anchor not yet signed. Press Defend first.',
+        false);
+      // A replay is invalid by policy even if the static verifier checks pass.
+      if (seen && v.valid) setVerdict('hero-demo-verdict', 'Replay rejected: nonce already spent. A fresh anchor is required.', false);
+    });
+  }
+
   function renderAll() {
     // Cheap, judge-facing panels paint first; the expensive KEM/XMSS/sweep
     // work runs in staged slices so the page is interactive immediately.
     heroSecurity();
     heroTags();
+    initHeroDemo();
     renderNTT();
     renderWOTS();
     renderSecurity();

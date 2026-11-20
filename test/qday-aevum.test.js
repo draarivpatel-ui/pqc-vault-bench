@@ -330,7 +330,7 @@ test('Q17: buildAddChainParams and wallet helpers work with mock EIP-1193 provid
     async request(req) {
       calls.push(req.method);
       if (req.method === 'eth_requestAccounts') return [TEST_PAYER];
-      if (req.method === 'eth_chainId') return '0x1';
+      if (req.method === 'eth_chainId') return addedChain ? Q.NETWORK.chainIdHex : '0x1';
       if (req.method === 'wallet_switchEthereumChain') {
         if (!addedChain) {
           const e = new Error('unrecognized chain');
@@ -393,6 +393,7 @@ function baseAnchor(extra) {
     amountTusd8: '25',
     spendCapTusd8: '100',
     seed: 'adversarial',
+    xmssSeed: 'adversarial-xmss-vector',
     nonce: '0x' + '11'.repeat(16)
   }, extra || {}));
 }
@@ -446,6 +447,7 @@ test('Q22: a swapped txRequest is rejected and the send uses the verified payloa
     async request(req) {
       sent.push(req.method);
       if (req.method === 'wallet_switchEthereumChain') return null;
+      if (req.method === 'eth_chainId') return Q.NETWORK.chainIdHex;
       if (req.method === 'eth_sendTransaction') { sent.push(req.params[0]); return '0x' + 'ef'.repeat(32); }
       throw new Error('unexpected ' + req.method);
     }
@@ -514,9 +516,9 @@ test('Q25: display strings must match raw base units and addresses must be valid
   assert.equal(r3.checks.tokenOk, false);
 });
 
-test('Q26: verifySettlementAnchor reports all fifteen checks and passes a clean anchor', () => {
+test('Q26: verifySettlementAnchor reports all seventeen checks and passes a clean anchor', () => {
   const r = Q.verifySettlementAnchor(baseAnchor());
-  assert.equal(Object.keys(r.checks).length, 15);
+  assert.equal(Object.keys(r.checks).length, 17);
   assert.equal(r.valid, true);
   for (const [k, v] of Object.entries(r.checks)) assert.equal(v, true, k);
   assert.equal(r.errors.length, 0);
@@ -577,4 +579,118 @@ test('Q19: index.html loads src/qday-aevum.js before app.js and exposes QDay pan
   assert.ok(m, 'qday section-head found');
   assert.equal(/class="(?:kicker|eyebrow)"/.test(m[1]), false, 'no kicker or eyebrow above QDay title');
   assert.equal(/<p[\s>]/.test(m[1]), false, 'no tagline paragraph under QDay title');
+});
+
+// =========================================================================
+// Section 8: Wave 2 fresh adversarial probes
+// =========================================================================
+
+test('Q29: every anchor uses a fresh unguessable XMSS tree (no leaf reuse across settlements)', () => {
+  const P = require('../src/pqc.js');
+  const common = { payer: TEST_PAYER, merchant: TEST_MERCHANT, amountTusd8: '25', spendCapTusd8: '100', seed: 'qday-aevum-vault-v1' };
+  const a1 = Q.createSettlementAnchor(Object.assign({}, common, { nonce: '0x' + '11'.repeat(16), amountTusd8: '25' }));
+  const a2 = Q.createSettlementAnchor(Object.assign({}, common, { nonce: '0x' + '22'.repeat(16), amountTusd8: '30' }));
+  const a3 = Q.createSettlementAnchor(Object.assign({}, common, { nonce: '0x' + '33'.repeat(16), amountTusd8: '40' }));
+  // Roots are distinct: no tree is rebuilt from the public demo seed.
+  assert.notEqual(a1.payload.xmssRoot, a2.payload.xmssRoot);
+  assert.notEqual(a2.payload.xmssRoot, a3.payload.xmssRoot);
+  assert.notEqual(a1.signature.wots[0], a2.signature.wots[0]);
+  // Each tree is one-shot, so leaf 0 is used exactly once per independent tree.
+  assert.equal(a1.signature.index, a1.payload.xmssLeaf);
+  assert.equal(a2.signature.index, a2.payload.xmssLeaf);
+  // Explicit deterministic xmssSeed still restores vector reproducibility.
+  const d1 = Q.createSettlementAnchor(Object.assign({}, common, { xmssSeed: 'vector-xmss', nonce: '0x' + 'aa'.repeat(16) }));
+  const d2 = Q.createSettlementAnchor(Object.assign({}, common, { xmssSeed: 'vector-xmss', nonce: '0x' + 'aa'.repeat(16) }));
+  assert.equal(d1.payload.xmssRoot, d2.payload.xmssRoot);
+  assert.equal(d1.signature.wots[0], d2.signature.wots[0]);
+  // PQC library XMSS itself stays stateful when reused as a single tree.
+  const tree = P.XMSS({ height: 2, seed: 'stateful-check' });
+  assert.equal(tree.sign('m1').index, 0);
+  assert.equal(tree.sign('m2').index, 1);
+});
+
+test('Q30: an attacker rebuilding a tree from the public seed cannot forge an accepted anchor', () => {
+  const P = require('../src/pqc.js');
+  const seed = 'qday-aevum-vault-v1';
+  const common = { payer: TEST_PAYER, merchant: TEST_MERCHANT, amountTusd8: '25', spendCapTusd8: '100', seed };
+  const victim = Q.createSettlementAnchor(Object.assign({}, common, { nonce: '0x' + '11'.repeat(16) }));
+  const ATTACK = '0x0000000000000000000000000000000000000999';
+  const att = Q.buildVaultAttestation({ seed });
+  const payload = {
+    schema: 'qday-aevum/tusd8-settlement-v1', chainId: Q.NETWORK.chainId, chainIdHex: Q.NETWORK.chainIdHex,
+    token: Q.CONTRACTS.tUSD8.address.toLowerCase(), tokenSymbol: 'tUSD8', tokenDecimals: 6,
+    payer: TEST_PAYER, merchant: ATTACK,
+    amountTusd8: '999', amountRaw: '999000000', spendCapTusd8: '1000', spendCapRaw: '1000000000',
+    nonce: '0x' + '77'.repeat(16), deadlineUnix: 1999999999,
+    xmssScheme: Q.ANCHOR_XMSS_SCHEME, xmssHeight: Q.ANCHOR_XMSS_HEIGHT,
+    xmssLeaf: 0, xmssRoot: '', calldata: Q.encodeTransfer(ATTACK, 999000000n), attestationHash: att.attestationHash
+  };
+  // The attacker rebuilds the tree from the public demo seed (the old bug).
+  const oldTree = P.XMSS({ height: Q.ANCHOR_XMSS_HEIGHT, seed: seed + ':qday-anchor-xmss' });
+  payload.xmssRoot = '0x' + oldTree.root;
+  const receipt = '0x' + P.hashHex(Q.canonicalString(payload), 'qday-receipt:');
+  const forged = {
+    payload, attestation: att, receiptHash: receipt,
+    commitmentHash: '0x' + P.hashHex(receipt + ':' + payload.calldata + ':' + att.attestationHash + ':' + payload.nonce, 'qday-commitment:'),
+    signature: oldTree.sign(receipt),
+    txRequest: { from: payload.payer, to: Q.CONTRACTS.tUSD8.address, data: payload.calldata, value: '0x0', chainId: Q.NETWORK.chainIdHex }
+  };
+  const r = Q.verifySettlementAnchor(forged, { nowUnix: 1700000000 });
+  assert.equal(r.valid, false);
+  // The reconstruction no longer matches the freshly generated victim root.
+  assert.notEqual(payload.xmssRoot, victim.payload.xmssRoot);
+  assert.equal(r.checks.rootIssuedOk, false);
+  assert.equal(r.checks.receiptHashOk, true); // internally consistent, but untrusted root
+});
+
+test('Q31: sendTusd8Transfer refuses to submit when the wallet stays on the wrong chain', async () => {
+  const anchor = baseAnchor();
+  const methods = [];
+  const provider = {
+    async request(req) {
+      methods.push(req.method);
+      if (req.method === 'wallet_switchEthereumChain') return null;
+      if (req.method === 'eth_chainId') return '0x1'; // ignores the switch
+      if (req.method === 'eth_sendTransaction') throw new Error('must not be reached');
+      return null;
+    }
+  };
+  await assert.rejects(() => Q.sendTusd8Transfer(provider, anchor), /wallet is on chain 1/);
+  assert.ok(methods.includes('wallet_switchEthereumChain'));
+  assert.equal(methods.includes('eth_sendTransaction'), false);
+});
+
+test('Q32: the commitment preimage binds the settlement nonce explicitly', () => {
+  const P = require('../src/pqc.js');
+  const anchor = baseAnchor();
+  const expected = '0x' + P.hashHex(
+    anchor.receiptHash + ':' + anchor.payload.calldata + ':' + anchor.attestation.attestationHash + ':' + anchor.payload.nonce,
+    'qday-commitment:'
+  );
+  assert.equal(anchor.commitmentHash, expected);
+  // A tampered nonce breaks commit hash even if receipt were left intact.
+  const t = JSON.parse(JSON.stringify(anchor));
+  t.payload.nonce = '0x' + '99'.repeat(16);
+  assert.equal(Q.verifySettlementAnchor(t).checks.commitmentHashOk, false);
+});
+
+test('Q33: a swapped leaf index is rejected by the new leaf-binding check', () => {
+  const anchor = baseAnchor();
+  const t = JSON.parse(JSON.stringify(anchor));
+  t.payload.xmssLeaf = 1;
+  const r = Q.verifySettlementAnchor(t);
+  assert.equal(r.checks.leafBindingOk, false);
+  assert.equal(r.valid, false);
+});
+
+test('Q34: every verifier check is surfaced in the live QDay UI as a labeled chip', () => {
+  const app = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8');
+  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  const labels = app.match(/const QDAY_CHECK_LABELS = \{([\s\S]*?)\};/);
+  assert.ok(labels, 'QDAY_CHECK_LABELS exists');
+  const anchor = baseAnchor();
+  for (const k of Object.keys(anchor.checks || Q.verifySettlementAnchor(anchor).checks)) {
+    assert.ok(labels[1].includes(k + ':'), 'missing UI label for ' + k);
+  }
+  assert.ok(html.includes('id="qday-anchor-checks"'), 'check chips container exists');
 });

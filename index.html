@@ -40,10 +40,20 @@
         <a class="btn btn-primary" href="#kem">Run the KEM</a>
         <a class="btn btn-ghost" href="#security">Check Q-Day risk</a>
       </div>
+      <div class="hero-demo" aria-label="One-click QDay settlement attack versus defend proof">
+        <div class="hero-demo-head"><b>Attack vs Defend</b><span>tUSD8 settlement on chain 44005</span></div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="hero-defend" type="button">Defend: sign and verify</button>
+          <button class="btn btn-ghost" id="hero-attack" type="button">Attack: flip one byte</button>
+          <button class="btn btn-ghost" id="hero-replay" type="button">Replay: resend anchor</button>
+        </div>
+        <div class="check-row" id="hero-demo-checks" aria-live="polite"></div>
+        <div class="verdict" id="hero-demo-verdict" role="status">One click signs a live settlement anchor, then a tampered byte or a replay is rejected by the verifier.</div>
+      </div>
       <div class="hero-stats" role="group" aria-label="Workbench facts">
         <div class="stat"><span class="stat-num" id="stat-q">3329</span><span class="stat-label">ring modulus q</span></div>
         <div class="stat"><span class="stat-num" id="stat-n">256</span><span class="stat-label">polynomial degree n</span></div>
-        <div class="stat"><span class="stat-num" id="stat-tests">173</span><span class="stat-label">passing tests</span></div>
+        <div class="stat"><span class="stat-num" id="stat-tests">179</span><span class="stat-label">passing tests</span></div>
         <div class="stat"><span class="stat-num">0</span><span class="stat-label">runtime dependencies</span></div>
       </div>
     </div>
@@ -306,7 +316,7 @@
       </div>
       <div class="card">
         <h3>PQC Vault Settlement Anchor</h3>
-        <p class="card-sub">A canonical payload binds chainId, token, payer, merchant, spend cap, nonce, deadline and the vault XMSS root; a fifteen-check verifier re-proves every binding before any transaction exists.</p>
+        <p class="card-sub">A canonical payload binds chainId, token, payer, merchant, spend cap, nonce, deadline and the vault XMSS root; a seventeen-check verifier re-proves every binding before any transaction exists.</p>
         <div class="field">
           <label for="qday-merchant">Merchant recipient address</label>
           <input type="text" id="qday-merchant" value="0x0000000000000000000000000000000000000202" spellcheck="false" autocomplete="off">

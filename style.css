@@ -100,6 +100,12 @@ html[data-theme="light"] .btn-primary { color: #fff; }
 .btn-primary:hover { filter: brightness(1.12); }
 .btn-ghost { background: var(--surface-2); color: var(--text-primary); border-color: var(--line); }
 .btn-ghost:hover { border-color: var(--accent); }
+.hero-demo { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin: -16px 0 24px; }
+.hero-demo-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 13px; margin-bottom: 12px; }
+.hero-demo-head span { color: var(--muted); font-family: var(--mono); font-size: 10.5px; }
+.hero-demo .btn-row { margin-bottom: 10px; }
+.hero-demo .check-row { margin-top: 8px; }
+.hero-demo .verdict { margin-top: 10px; font-size: 12px; padding: 9px 12px; }
 .hero-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; border-top: 1px solid var(--line); padding-top: 22px; }
 .stat-num { display: block; font-family: var(--mono); font-size: 24px; font-weight: 700; letter-spacing: -.03em; }
 .stat-label { display: block; color: var(--muted); font-size: 11.5px; margin-top: 3px; }

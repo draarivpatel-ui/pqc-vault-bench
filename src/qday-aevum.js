@@ -230,6 +230,11 @@
   // ---- Canonical SHA-256 commitments & PQC Vault Settlement Anchor --------
 
   const NONCE_RE = /^0x[0-9a-fA-F]{16,64}$/;
+  // Session registry of XMSS roots minted by this module. Verification of an
+  // anchor that was not built here (for example a tree rebuilt from the public
+  // demo seed by an attacker) fails rootIssuedOk. This is a UI/demo settlement
+  // flow, so anchors are always created and verified within one session.
+  const issuedRoots = new Set();
   const ANCHOR_XMSS_HEIGHT = 2;
   const ANCHOR_XMSS_SCHEME = 'XMSS-SHA256-WOTS16';
 
@@ -319,18 +324,30 @@
       throw new TypeError('nonce must be a 0x-prefixed hex string of 8 to 32 bytes');
     }
 
+    // This is the safe part of the seed: it is used only to derive the public
+    // attestation body (KEM profile, risk inputs) from reproducible vectors.
     const seed = String(opts.seed || 'qday-aevum-vault-v1');
     const attestation = buildVaultAttestation({
       seed,
       kemParam: opts.kemParam || P.KEM_DEFAULT,
       riskInput: opts.riskInput
     });
-    const calldata = encodeTransfer(merchant, amountRaw);
-    const xmss = P.XMSS({ height: ANCHOR_XMSS_HEIGHT, seed: seed + ':qday-anchor-xmss' });
 
-    // The payload declares the vault XMSS root and a fresh nonce, so the
-    // signature is bound to a specific signer identity and a unique
-    // settlement instance rather than being replayable or self-referential.
+    // Each anchor gets its own XMSS tree with fresh, unguessable entropy. The
+    // public demo seed is used only for reproducible attestation vectors, never
+    // for a signing key: otherwise anyone who reads the source could rebuild
+    // the tree, sign at leaf 0 and produce an "accepted" anchor. A one-shot
+    // tree also means no WOTS+ leaf is ever reused across settlements.
+    // Callers building deterministic vectors may pass opts.xmssSeed explicitly.
+    const xmssSeed = opts.xmssSeed !== undefined
+      ? String(opts.xmssSeed)
+      : randomHexBytes(32);
+    const calldata = encodeTransfer(merchant, amountRaw);
+    const xmss = P.XMSS({ height: ANCHOR_XMSS_HEIGHT, seed: xmssSeed + ':qday-anchor-xmss' });
+
+    // The payload declares the vault XMSS root and the exact leaf consumed by
+    // this signature. Both are covered by receiptHash, so a signature from a
+    // foreign tree or a different leaf fails the binding checks.
     const payload = {
       schema: 'qday-aevum/tusd8-settlement-v1',
       chainId: NETWORK.chainId,
@@ -348,18 +365,23 @@
       deadlineUnix,
       xmssScheme: ANCHOR_XMSS_SCHEME,
       xmssHeight: ANCHOR_XMSS_HEIGHT,
+      xmssLeaf: 0,
       xmssRoot: '0x' + xmss.root,
       calldata,
       attestationHash: attestation.attestationHash
     };
 
     const receiptHash = sha256Hex0x(canonicalString(payload), 'qday-receipt:');
+    // The nonce is included explicitly in the commitment preimage so the
+    // replay-resistance property is visible in the committed bytes, not only
+    // indirectly inside receiptHash.
     const commitmentHash = sha256Hex0x(
-      receiptHash + ':' + calldata + ':' + attestation.attestationHash,
+      receiptHash + ':' + calldata + ':' + attestation.attestationHash + ':' + nonce,
       'qday-commitment:'
     );
 
     const signature = xmss.sign(receiptHash);
+    issuedRoots.add('0x' + xmss.root);
 
     const txRequest = {
       from: payer,
@@ -396,6 +418,8 @@
       calldataOk: false,
       attestationOk: false,
       xmssRootOk: false,
+      rootIssuedOk: false,
+      leafBindingOk: false,
       txRequestOk: false,
       receiptHashOk: false,
       commitmentHashOk: false,
@@ -475,6 +499,20 @@
       Number.isInteger(sig.index) && sig.index >= 0 && sig.index < (1 << p.xmssHeight);
     if (!checks.xmssRootOk) errors.push('XMSS root, height or leaf index not bound to the payload');
 
+    // Only trees minted by this module in the current session are trusted.
+    // An attacker who rebuilds a tree from the public demo seed cannot inject
+    // an anchor whose root was never issued here.
+    checks.rootIssuedOk = typeof p.xmssRoot === 'string' && issuedRoots.has(p.xmssRoot);
+    if (!checks.rootIssuedOk) errors.push('XMSS root was not issued by this settlement session');
+
+    // The leaf consumed by this signature is declared in the canonical payload
+    // and covered by receiptHash, so a swapped leaf or a reused-key forgery
+    // cannot pass by swapping the signature alone.
+    checks.leafBindingOk = Number.isInteger(p.xmssLeaf) &&
+      p.xmssLeaf >= 0 && p.xmssLeaf < (1 << p.xmssHeight) &&
+      sig.index === p.xmssLeaf;
+    if (!checks.leafBindingOk) errors.push('XMSS leaf index not bound to the payload');
+
     try {
       const tx = anchor.txRequest;
       checks.txRequestOk = !!tx && typeof tx === 'object' &&
@@ -493,7 +531,7 @@
     if (!checks.receiptHashOk) errors.push('receiptHash does not match canonical settlement payload');
 
     const expectedCommitment = sha256Hex0x(
-      anchor.receiptHash + ':' + p.calldata + ':' + p.attestationHash,
+      anchor.receiptHash + ':' + p.calldata + ':' + p.attestationHash + ':' + p.nonce,
       'qday-commitment:'
     );
     checks.commitmentHashOk = anchor.commitmentHash === expectedCommitment;
@@ -770,6 +808,20 @@
       };
     }
     await ensureAevumNetwork(provider);
+    // Re-read the active chain after the add/switch request. A wallet that
+    // ignores the switch (or a hostile provider) must never receive tUSD8
+    // calldata while reporting a different chain.
+    let activeChainId = null;
+    try {
+      const chainHex = await provider.request({ method: 'eth_chainId' });
+      activeChainId = Number(BigInt(chainHex));
+    } catch (err) {
+      throw new Error('cannot confirm wallet chain before sending: ' + err.message);
+    }
+    if (activeChainId !== NETWORK.chainId) {
+      throw new Error('refusing transfer: wallet is on chain ' + activeChainId +
+        ', expected QDay Aevum testnet ' + NETWORK.chainId);
+    }
     const txHash = await provider.request({
       method: 'eth_sendTransaction',
       params: [{
