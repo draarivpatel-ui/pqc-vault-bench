@@ -5,6 +5,7 @@
   const A = window.PQCAnalysis;
   const Q = window.QDayAevum;
   const MX = window.PQCParamMatrix;
+  const DT = window.PQCDomTable;
   const $ = id => document.getElementById(id);
   const NS = 'http://www.w3.org/2000/svg';
 
@@ -529,12 +530,8 @@
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
   function dataTable(containerId, headers, rows) {
-    const t = $(containerId);
-    if (!t) return;
-    const head = '<thead><tr>' + headers.map(h => '<th scope="col">' + esc(h) + '</th>').join('') + '</tr></thead>';
-    const body = '<tbody>' + rows.map(r => '<tr>' + r.map(v =>
-      '<td' + (typeof v === 'number' ? ' class="num"' : '') + '>' + esc(v) + '</td>').join('') + '</tr>').join('') + '</tbody>';
-    t.innerHTML = head + body;
+    // Rebuilds only thead and tbody; the table's <caption> stays in the DOM.
+    DT.renderDataTable($(containerId), headers, rows);
   }
 
   function renderVerification() {
@@ -630,12 +627,17 @@
   function renderMatrix() {
     if (!MX || !$('mx-table')) return;
     const rows = mxRows();
+    // Bit figures appear only for rows the workbench estimator covers;
+    // category rows show the NIST category and its reference primitive
+    // instead of an invented bit number.
     dataTable('mx-table',
-      ['set', 'std', 'cat', 'pk/ek B', 'sk/dk B', 'ct/sig B', 'handshake B', 'classical', 'quantum', 'keygen wu', 'sign/enc wu', 'verify/dec wu'],
+      ['set', 'std', 'NIST cat', 'category reference', 'pk/ek B', 'sk/dk B', 'ct/sig B', 'handshake B', 'classical', 'quantum', 'security method', 'keygen wu', 'sign/enc wu', 'verify/dec wu'],
       rows.map(r => [
-        r.name, r.standard.replace('FIPS ', 'F'), r.category,
+        r.name, r.standard.replace('FIPS ', 'F'), r.category, r.security.referencePrimitive,
         r.bytes.publicKey, r.bytes.secretKey, r.bytes.payload, r.bytes.handshakeTotal,
-        r.security.classical, r.security.quantum,
+        r.security.classical === null ? 'n/a' : r.security.classical,
+        r.security.quantum === null ? 'n/a' : r.security.quantum,
+        r.security.method + (r.security.estimateModel ? ' (' + r.security.estimateModel + ')' : ''),
         shortNum(r.workUnits.keygen), shortNum(r.workUnits.primary), shortNum(r.workUnits.secondary)
       ]));
     const metric = $('mx-metric').value;
@@ -652,7 +654,10 @@
         { label: 'sign or encapsulate work (log10 scale)', color: SERIES[1] }
       ]);
     } else if (metric === 'security') {
-      groupedBars('mx-chart', rows.map(r => ({
+      // Only estimator rows carry bit figures, so only they can be charted;
+      // the other rows are NIST category bounds, not bit estimates.
+      const est = rows.filter(r => r.security.quantum !== null);
+      groupedBars('mx-chart', est.map(r => ({
         label: r.name.replace('SLH-DSA-', 'SLH-'),
         values: [r.security.classical, r.security.quantum]
       })), [
@@ -660,8 +665,9 @@
         { label: 'quantum bits', color: SERIES[1] }
       ], { max: 256, ticks: 4, padL: 118, rowH: 26, directLabels: true });
       legend('mx-legend', [
-        { label: 'classical bit security', color: SERIES[0] },
-        { label: 'post-quantum bit security', color: SERIES[1] }
+        { label: 'classical bits, workbench estimator', color: SERIES[0] },
+        { label: 'quantum bits, workbench estimator', color: SERIES[1] },
+        { label: (rows.length - est.length) + ' of ' + rows.length + ' rows are NIST category bounds, not bit estimates', color: 'var(--line)' }
       ]);
     } else {
       groupedBars('mx-chart', rows.map(r => ({
@@ -679,10 +685,12 @@
     const derivedOk = rows.every(r => r.publishedBytesMatch);
     const kemRows = rows.filter(r => r.role === 'kem');
     const measuredOk = kemRows.every(r => r.measuredMatchesSpec !== false);
+    const estRows = rows.filter(r => r.security.method === 'workbench-estimator').length;
     chips('mx-checks', [
       { t: rows.length + ' parameter sets', tone: 'info' },
       { t: 'derived bytes == published: ' + (derivedOk ? 'OK' : 'FAIL'), tone: derivedOk ? 'ok' : 'bad' },
       { t: 'KEM measured == spec: ' + (kemRows.length === 0 || measuredOk ? 'OK' : 'FAIL'), tone: kemRows.length === 0 || measuredOk ? 'ok' : 'bad' },
+      { t: estRows + ' rows carry a named bit estimate', tone: 'info' },
       { t: 'cost model ' + MX.COST_MODEL, tone: 'info' }
     ]);
   }

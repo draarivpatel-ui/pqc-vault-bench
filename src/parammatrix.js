@@ -45,14 +45,24 @@
   });
 
   // FIPS 205 approved sets, Winternitz w = 16 throughout. h = d * hPrime.
+  // Table 2 and section 11 name twelve sets: each security category ships
+  // in a SHA2 and a SHAKE instantiation that share every parameter and the
+  // published signature size, so the matrix carries the twelve official
+  // names rather than six unnamed hash-family pairs.
   const SLH_W = 16;
   const SLH_DSA_PARAMS = Object.freeze({
-    'SLH-DSA-128s': Object.freeze({ n: 16, h: 63, d: 7,  hPrime: 9, a: 12, kFors: 14, m: 30, category: 1, sig: 7856 }),
-    'SLH-DSA-128f': Object.freeze({ n: 16, h: 66, d: 22, hPrime: 3, a: 6,  kFors: 33, m: 34, category: 1, sig: 17088 }),
-    'SLH-DSA-192s': Object.freeze({ n: 24, h: 63, d: 7,  hPrime: 9, a: 14, kFors: 17, m: 39, category: 3, sig: 16224 }),
-    'SLH-DSA-192f': Object.freeze({ n: 24, h: 66, d: 22, hPrime: 3, a: 8,  kFors: 33, m: 42, category: 3, sig: 35664 }),
-    'SLH-DSA-256s': Object.freeze({ n: 32, h: 64, d: 8,  hPrime: 8, a: 14, kFors: 22, m: 47, category: 5, sig: 29792 }),
-    'SLH-DSA-256f': Object.freeze({ n: 32, h: 68, d: 17, hPrime: 4, a: 9,  kFors: 35, m: 49, category: 5, sig: 49856 })
+    'SLH-DSA-SHA2-128s':  Object.freeze({ n: 16, h: 63, d: 7,  hPrime: 9, a: 12, kFors: 14, m: 30, category: 1, sig: 7856,  hashFamily: 'SHA2' }),
+    'SLH-DSA-SHA2-128f':  Object.freeze({ n: 16, h: 66, d: 22, hPrime: 3, a: 6,  kFors: 33, m: 34, category: 1, sig: 17088, hashFamily: 'SHA2' }),
+    'SLH-DSA-SHA2-192s':  Object.freeze({ n: 24, h: 63, d: 7,  hPrime: 9, a: 14, kFors: 17, m: 39, category: 3, sig: 16224, hashFamily: 'SHA2' }),
+    'SLH-DSA-SHA2-192f':  Object.freeze({ n: 24, h: 66, d: 22, hPrime: 3, a: 8,  kFors: 33, m: 42, category: 3, sig: 35664, hashFamily: 'SHA2' }),
+    'SLH-DSA-SHA2-256s':  Object.freeze({ n: 32, h: 64, d: 8,  hPrime: 8, a: 14, kFors: 22, m: 47, category: 5, sig: 29792, hashFamily: 'SHA2' }),
+    'SLH-DSA-SHA2-256f':  Object.freeze({ n: 32, h: 68, d: 17, hPrime: 4, a: 9,  kFors: 35, m: 49, category: 5, sig: 49856, hashFamily: 'SHA2' }),
+    'SLH-DSA-SHAKE-128s': Object.freeze({ n: 16, h: 63, d: 7,  hPrime: 9, a: 12, kFors: 14, m: 30, category: 1, sig: 7856,  hashFamily: 'SHAKE' }),
+    'SLH-DSA-SHAKE-128f': Object.freeze({ n: 16, h: 66, d: 22, hPrime: 3, a: 6,  kFors: 33, m: 34, category: 1, sig: 17088, hashFamily: 'SHAKE' }),
+    'SLH-DSA-SHAKE-192s': Object.freeze({ n: 24, h: 63, d: 7,  hPrime: 9, a: 14, kFors: 17, m: 39, category: 3, sig: 16224, hashFamily: 'SHAKE' }),
+    'SLH-DSA-SHAKE-192f': Object.freeze({ n: 24, h: 66, d: 22, hPrime: 3, a: 8,  kFors: 33, m: 42, category: 3, sig: 35664, hashFamily: 'SHAKE' }),
+    'SLH-DSA-SHAKE-256s': Object.freeze({ n: 32, h: 64, d: 8,  hPrime: 8, a: 14, kFors: 22, m: 47, category: 5, sig: 29792, hashFamily: 'SHAKE' }),
+    'SLH-DSA-SHAKE-256f': Object.freeze({ n: 32, h: 68, d: 17, hPrime: 4, a: 9,  kFors: 35, m: 49, category: 5, sig: 49856, hashFamily: 'SHAKE' })
   });
 
   function packBytes(coeffs, bits) { return Math.ceil(coeffs * bits / 8); }
@@ -106,21 +116,43 @@
   }
 
   // ============================================================
-  // Section 2: bit-security levels
-  // Implemented schemes report the workbench estimator; the rest report
-  // the floor of their NIST security category. The method is recorded
-  // per row so the provenance of each figure is explicit.
+  // Section 2: security levels
+  // Implemented schemes report the workbench estimator with its attack
+  // model named. The rest report the official NIST security category and
+  // its reference primitive verbatim: a category is a computational
+  // resource bound (key or collision search against a reference scheme),
+  // not a bit guarantee, so category rows deliberately carry no bit
+  // figures. Any bit estimate shown is always paired with the method and
+  // attack model that produced it.
   // ============================================================
-  const CATEGORY_BITS = Object.freeze({ 1: 128, 2: 128, 3: 192, 4: 192, 5: 256 });
+  const CATEGORY_REFERENCE = Object.freeze({
+    1: 'AES-128 key search',
+    2: 'SHA-256 collision search',
+    3: 'AES-192 key search',
+    4: 'SHA-384 collision search',
+    5: 'AES-256 key search'
+  });
 
   function securityEstimate(name, category) {
-    if (P.PRIMITIVES && P.PRIMITIVES[name]) {
-      const p = P.analyzePrimitive(name);
-      return { classical: p.classical, quantum: p.quantum, method: 'workbench-estimator' };
+    const referencePrimitive = CATEGORY_REFERENCE[category];
+    if (!referencePrimitive) throw new RangeError('unknown NIST category: ' + category);
+    // The estimator is keyed by scheme geometry; the two SLH-DSA hash
+    // families share parameters, so SHA2 and SHAKE names map onto the
+    // same underlying estimator entry.
+    const estName = name.replace(/^(SLH-DSA)-(?:SHA2|SHAKE)-/, '$1-');
+    if (P.PRIMITIVES && P.PRIMITIVES[estName]) {
+      const p = P.analyzePrimitive(estName);
+      return {
+        category, referencePrimitive,
+        classical: p.classical, quantum: p.quantum,
+        method: 'workbench-estimator', estimateModel: p.quantumAttack
+      };
     }
-    const bits = CATEGORY_BITS[category];
-    if (!bits) throw new RangeError('unknown NIST category: ' + category);
-    return { classical: bits, quantum: bits, method: 'nist-category-floor' };
+    return {
+      category, referencePrimitive,
+      classical: null, quantum: null,
+      method: 'nist-category', estimateModel: null
+    };
   }
 
   // ============================================================
@@ -240,13 +272,21 @@
     const leaves = Math.pow(2, p.hPrime);
     const wotsPkHash = len * SLH_W;                          // chains + secret key evaluations
     const wotsSignHash = len * (SLH_W - 1) / 2;              // expected steps to signature values
-    const xmssTree = leaves * wotsPkHash + (leaves - 1);     // leaf WOTS+ keys + tree nodes
+    // FIPS 205 Algorithm 6 / Algorithm 14 treehash compresses each WOTS+
+    // public key with T_len before it becomes a tree leaf, so every leaf
+    // costs the chain evaluations plus one compression call.
+    const xmssTree = leaves * (wotsPkHash + 1) + (leaves - 1); // leaves incl. T_len + tree nodes
     const forsBuild = p.kFors * (Math.pow(2, p.a + 1) - 1);  // k FORS trees, leaves and nodes
     const forsVerify = p.kFors * (1 + p.a);                  // leaf recompute + auth path
+    // Sign: build the k FORS trees, then per hypertree layer rebuild the
+    // XMSS tree for its auth path and run the expected WOTS+ chain steps.
+    // Verify: per FORS key one leaf F plus a auth path; per layer the
+    // WOTS+ chain completion, the T_len leaf compression of the recovered
+    // public key, and the h' node hashes up the auth path.
     return {
       keygen: { hashCalls: xmssTree },
       sign: { hashCalls: forsBuild + p.d * (xmssTree + wotsSignHash) },
-      verify: { hashCalls: forsVerify + p.d * (wotsSignHash + p.hPrime + 1) },
+      verify: { hashCalls: forsVerify + p.d * (wotsSignHash + 1 + p.hPrime) },
       wotsLen: len
     };
   }
@@ -311,7 +351,7 @@
       const w = slhDsaWorkProfile(name);
       rows.push({
         name, standard: 'FIPS 205', family: 'SLH-DSA', role: 'signature', category: p.category,
-        params: { n: p.n, h: p.h, d: p.d, hPrime: p.hPrime, a: p.a, kFors: p.kFors, m: p.m, wotsLen: w.wotsLen },
+        params: { n: p.n, h: p.h, d: p.d, hPrime: p.hPrime, a: p.a, kFors: p.kFors, m: p.m, wotsLen: w.wotsLen, hashFamily: p.hashFamily },
         bytes: {
           publicKey: b.pkBytes, secretKey: b.skBytes, payload: b.sigBytes,
           handshakeTotal: b.pkBytes + b.sigBytes,
@@ -373,11 +413,15 @@
       hashSignatureSizes: A.hashSignatureSizes(seed + ':wots', 3),
       securityTable: P.securityReport().map(x => ({ name: x.name, classical: x.classical, quantum: x.quantum })),
       selfChecks: {
-        matrixComplete: matrix.length === 12 && new Set(matrix.map(r => r.name)).size === 12,
+        matrixComplete: matrix.length === 18 && new Set(matrix.map(r => r.name)).size === 18,
+        slhDsaFamiliesComplete: matrix.filter(r => r.standard === 'FIPS 205').length === 12 &&
+          ['SHA2', 'SHAKE'].every(f => matrix.filter(r => r.standard === 'FIPS 205' && r.params.hashFamily === f).length === 6),
         derivedBytesMatchPublished: matrix.every(r => r.publishedBytesMatch),
         kemMeasuredMatchesSpec: matrix.filter(r => r.role === 'kem').every(r => r.measuredMatchesSpec),
         sweepsClean: sweeps.every(s => s.decryptionFailures === 0),
-        categoriesCoverNist: [1, 2, 3, 5].every(c => matrix.some(r => r.category === c))
+        categoriesCoverNist: [1, 2, 3, 5].every(c => matrix.some(r => r.category === c)),
+        categoryRowsCarryNoBits: matrix.every(r =>
+          r.security.method !== 'nist-category' || (r.security.classical === null && r.security.quantum === null))
       }
     };
     const fingerprint = P.bytesToHex(P.sha256(P.utf8Bytes(JSON.stringify(payload))));
@@ -385,9 +429,9 @@
   }
 
   const CSV_COLUMNS = Object.freeze([
-    'set', 'standard', 'family', 'nistCategory',
+    'set', 'standard', 'family', 'nistCategory', 'nistCategoryReference',
     'pkOrEkBytes', 'skOrDkBytes', 'ctOrSigBytes', 'handshakeBytes',
-    'classicalBits', 'quantumBits', 'securityMethod',
+    'classicalBits', 'quantumBits', 'securityMethod', 'estimateModel',
     'keygenWorkUnits', 'signOrEncapsWorkUnits', 'verifyOrDecapsWorkUnits',
     'expectedSignAttempts', 'sweepSeeds', 'sweepMatched', 'sweepDecryptionFailures'
   ]);
@@ -401,16 +445,36 @@
     return s;
   }
 
+  // The CSV leads with a commented provenance block naming the run
+  // parameters and the JSON payload fingerprint, so the export alone
+  // identifies which run produced it. Every line carries a leading '#'
+  // before the header row and every value is flattened to a single line,
+  // so a hostile seed cannot inject a data row or a spreadsheet formula.
+  function csvCommentLine(label, value) {
+    return '# ' + label + ': ' + String(value).replace(/[\r\n\t]+/g, ' ');
+  }
+
   function reportCsv(report) {
     const sweepBy = {};
     for (const s of (report.sweeps || [])) sweepBy[s.param] = s;
-    const lines = [CSV_COLUMNS.join(',')];
+    const lines = [
+      csvCommentLine('report', 'pqc-vault-bench deterministic benchmark CSV'),
+      csvCommentLine('schema', report.schema),
+      csvCommentLine('workbench version', report.workbenchVersion),
+      csvCommentLine('report seed', report.runParameters.seed),
+      csvCommentLine('cost model', report.costModel.name),
+      csvCommentLine('sweep count', report.runParameters.sweepCount),
+      csvCommentLine('JSON payload SHA-256 fingerprint', report.fingerprint),
+      CSV_COLUMNS.join(',')
+    ];
     for (const r of report.matrix) {
       const sw = sweepBy[r.name];
       lines.push([
-        r.name, r.standard, r.family, r.category,
+        r.name, r.standard, r.family, r.category, r.security.referencePrimitive,
         r.bytes.publicKey, r.bytes.secretKey, r.bytes.payload, r.bytes.handshakeTotal,
-        r.security.classical, r.security.quantum, r.security.method,
+        r.security.classical === null ? '' : r.security.classical,
+        r.security.quantum === null ? '' : r.security.quantum,
+        r.security.method, r.security.estimateModel === null ? '' : r.security.estimateModel,
         r.workUnits.keygen, r.workUnits.primary, r.workUnits.secondary,
         r.expectedAttempts !== undefined ? r.expectedAttempts.toFixed(4) : '',
         sw ? sw.count : '', sw ? sw.matched : '', sw ? sw.decryptionFailures : ''
@@ -421,10 +485,10 @@
 
   const api = {
     WORKBENCH_VERSION, REPORT_SCHEMA, COST_MODEL,
-    ML_KEM_SPEC, ML_DSA_PARAMS, ML_DSA_Q, SLH_DSA_PARAMS, SLH_W, CATEGORY_BITS, COST_WEIGHTS,
+    ML_KEM_SPEC, ML_DSA_PARAMS, ML_DSA_Q, SLH_DSA_PARAMS, SLH_W, CATEGORY_REFERENCE, COST_WEIGHTS,
     packBytes, mlKemSpecBytes, mlDsaSpecBytes, slhDsaLen, slhDsaM, slhDsaSpecBytes,
     securityEstimate, workUnits, mlKemWorkProfile, mlDsaWorkProfile, mlDsaExpectedAttempts,
-    slhDsaWorkProfile, fipsParameterMatrix, benchmarkReport, reportCsv, csvEscape, CSV_COLUMNS
+    slhDsaWorkProfile, fipsParameterMatrix, benchmarkReport, reportCsv, csvEscape, csvCommentLine, CSV_COLUMNS
   };
   return api;
 }));

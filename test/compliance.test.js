@@ -81,7 +81,7 @@ test('COMPLIANCE 04: no emoji or pictographs in any text file', () => {
 
 test('COMPLIANCE 05: required documents exist', () => {
   for (const f of ['README.md', 'DEVPOST_UPGRADE.md', 'LICENSE', 'package.json',
-    'src/pqc.js', 'src/analysis.js', 'index.html', 'app.js']) {
+    'src/pqc.js', 'src/analysis.js', 'src/domtable.js', 'index.html', 'app.js']) {
     assert.ok(fs.existsSync(path.join(root, f)), f + ' must exist');
   }
 });
