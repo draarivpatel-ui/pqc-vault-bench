@@ -8,7 +8,6 @@
   const NS = 'http://www.w3.org/2000/svg';
 
   const SERIES = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)'];
-  const css = v => getComputedStyle(document.documentElement).getPropertyValue(v.replace('var(', '').replace(')', '')).trim();
 
   // ---- tooltip singleton -------------------------------------------------
   let tip;
@@ -94,7 +93,7 @@
         const v = r.values[si];
         const y = y0 + 5 + si * (barH + 2);
         const bw = Math.max(2, scale(v));
-        const rect = el('rect', {
+        el('rect', {
           x: padL, y, width: bw, height: barH, rx: 4,
           fill: se.color
         }, s);
@@ -138,7 +137,7 @@
       const x = padL + i * step + (step - bw) / 2;
       const y = padT + ((maxV - v) / range) * plotH;
       const hh = Math.abs(zeroY - y);
-      const rect = el('rect', { x, y: Math.min(y, zeroY), width: bw, height: Math.max(1, hh), rx: 3, fill: opts.color || SERIES[0] }, s);
+      el('rect', { x, y: Math.min(y, zeroY), width: bw, height: Math.max(1, hh), rx: 3, fill: opts.color || SERIES[0] }, s);
       const hit = el('rect', { x: padL + i * step, y: padT, width: step, height: plotH, fill: 'transparent' }, s);
       hit.style.cursor = 'crosshair';
       const label = opts.labels ? opts.labels[i] : String(i);
@@ -439,7 +438,6 @@
       { label: 'quantum bit security', color: SERIES[1] }
     ]);
     const g = P.groverIterations(256);
-    const sh = P.shorQubits(256);
     $('sec-readout').innerHTML = '';
     const rows2 = [
       ['Shor logical qubits (256-bit curve)', P.shorQubits(256).toLocaleString()],
