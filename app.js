@@ -4,6 +4,7 @@
   const P = window.PQC;
   const A = window.PQCAnalysis;
   const Q = window.QDayAevum;
+  const MX = window.PQCParamMatrix;
   const $ = id => document.getElementById(id);
   const NS = 'http://www.w3.org/2000/svg';
 
@@ -31,6 +32,38 @@
     t.style.top = y + 'px';
   }
   function hideTip() { if (tip) tip.style.display = 'none'; }
+  // Escape dismisses the tooltip; chart bars are keyboard focusable and
+  // surface the same tooltip on focus as on hover.
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') hideTip(); });
+  function keyboardTip(node, html) {
+    node.setAttribute('tabindex', '0');
+    node.setAttribute('role', 'button');
+    node.setAttribute('aria-label', html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+    node.addEventListener('focus', () => {
+      const b = node.getBoundingClientRect();
+      showTip({ clientX: b.left + b.width / 2, clientY: b.top + 4 }, html);
+    });
+    node.addEventListener('blur', hideTip);
+  }
+
+  // ---- assistive announcements and input recovery -------------------------
+  const liveRegion = $('a11y-live');
+  let liveTimer = null;
+  function announce(msg) {
+    if (!liveRegion) return;
+    // Re-set after a tick so identical back-to-back messages re-announce.
+    clearTimeout(liveTimer);
+    liveTimer = setTimeout(() => { liveRegion.textContent = msg; }, 80);
+  }
+  function sanitizeNumberField(el, min) {
+    const v = Number(el.value);
+    if (!Number.isFinite(v) || v < min) {
+      el.value = String(min);
+      announce('Invalid number corrected to ' + min + '.');
+      return min;
+    }
+    return v;
+  }
 
   function el(tag, attrs, parent) {
     const e = document.createElementNS(NS, tag);
@@ -101,8 +134,10 @@
         // hit target larger than the mark
         const hit = el('rect', { x: padL, y: y - 3, width: plotW, height: barH + 6, fill: 'transparent' }, s);
         hit.style.cursor = 'crosshair';
-        hit.addEventListener('mousemove', e => showTip(e, '<b>' + r.label + '</b><br>' + se.label + ': ' + fmt(v, opts)));
+        const tipHtml = '<b>' + r.label + '</b><br>' + se.label + ': ' + fmt(v, opts);
+        hit.addEventListener('mousemove', e => showTip(e, tipHtml));
         hit.addEventListener('mouseleave', hideTip);
+        keyboardTip(hit, tipHtml);
         if (opts.directLabels && v > 0) {
           txt(s, padL + bw + 6, y + barH - 1, fmt(v, opts), 'bar-label');
         }
@@ -142,8 +177,10 @@
       const hit = el('rect', { x: padL + i * step, y: padT, width: step, height: plotH, fill: 'transparent' }, s);
       hit.style.cursor = 'crosshair';
       const label = opts.labels ? opts.labels[i] : String(i);
-      hit.addEventListener('mousemove', e => showTip(e, '<b>coefficient ' + label + '</b><br>value: ' + fmt(v, opts)));
+      const tipHtml = '<b>coefficient ' + label + '</b><br>value: ' + fmt(v, opts);
+      hit.addEventListener('mousemove', e => showTip(e, tipHtml));
       hit.addEventListener('mouseleave', hideTip);
+      keyboardTip(hit, tipHtml);
     });
     return s;
   }
@@ -173,8 +210,10 @@
       el('rect', { x, y: yR, width: bw, height: Math.max(1, hR), rx: 3, fill: SERIES[0] }, s);
       const hit = el('rect', { x: padL + i * step, y: padT, width: step, height: plotH, fill: 'transparent' }, s);
       hit.style.cursor = 'crosshair';
-      hit.addEventListener('mousemove', e => showTip(e, '<b>chain ' + i + '</b><br>hash steps revealed: ' + revealed + '<br>steps hidden: ' + hidden));
+      const tipHtml = '<b>chain ' + i + '</b><br>hash steps revealed: ' + revealed + '<br>steps hidden: ' + hidden;
+      hit.addEventListener('mousemove', e => showTip(e, tipHtml));
       hit.addEventListener('mouseleave', hideTip);
+      keyboardTip(hit, tipHtml);
     });
     return s;
   }
@@ -319,6 +358,7 @@
       s.textContent = c.t;
       $('kem-checks').appendChild(s);
     }
+    announce('ML-KEM ' + param + ' handshake: shared secrets ' + (match ? 'match' : 'do not match') + '.');
   }
   $('kem-run').addEventListener('click', renderKEM);
   $('kem-param').addEventListener('change', renderKEM);
@@ -467,6 +507,11 @@
     setVerdict('risk-advice', r.advice, r.tier === 'low');
   }
   ['risk-value', 'risk-age', 'risk-exposed', 'risk-p2pkh'].forEach(id => $(id).addEventListener('input', renderRisk));
+  // On commit, invalid numbers self heal back to a safe value.
+  ['risk-value', 'risk-age'].forEach(id => $(id).addEventListener('change', () => {
+    sanitizeNumberField($(id), 0);
+    renderRisk();
+  }));
 
   // ---- verification telemetry ---------------------------------------------
   function chips(containerId, items) {
@@ -557,6 +602,7 @@
     ]);
     dataTable('hybrid-table', ['classical', 'post-quantum', 'classical bits', 'quantum bits', 'Shor on classical half'],
       hybrid.map(r => [r.classical, r.postQuantum, r.classicalBits, r.quantumBits, r.classicalHalfBrokenBy]));
+    announce('KEM sweep complete for ' + param + ': ' + sweep.matched + ' of ' + sweep.count + ' shared secrets matched.');
   }
   $('verify-run').addEventListener('click', renderVerification);
   $('verify-param').addEventListener('change', renderVerification);
@@ -567,6 +613,145 @@
     $('verify-seeds-out').textContent = $('verify-seeds').value;
     clearTimeout(verifyTimer);
     verifyTimer = setTimeout(renderVerification, 200);
+  });
+
+  // ---- FIPS 203 / 204 / 205 parameter matrix -----------------------------
+  const shortNum = v => (v >= 1e6 ? v.toExponential(2) : String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ','));
+  function mxRows() {
+    const fam = $('mx-family').value;
+    let rows = MX.fipsParameterMatrix();
+    if (fam !== 'all') rows = rows.filter(r => r.standard === fam);
+    const sort = $('mx-sort').value;
+    if (sort === 'bandwidth') rows = rows.slice().sort((a, b) => a.bytes.handshakeTotal - b.bytes.handshakeTotal);
+    else if (sort === 'primary') rows = rows.slice().sort((a, b) => a.workUnits.primary - b.workUnits.primary);
+    else if (sort === 'bytes') rows = rows.slice().sort((a, b) => a.bytes.payload - b.bytes.payload);
+    return rows;
+  }
+  function renderMatrix() {
+    if (!MX || !$('mx-table')) return;
+    const rows = mxRows();
+    dataTable('mx-table',
+      ['set', 'std', 'cat', 'pk/ek B', 'sk/dk B', 'ct/sig B', 'handshake B', 'classical', 'quantum', 'keygen wu', 'sign/enc wu', 'verify/dec wu'],
+      rows.map(r => [
+        r.name, r.standard.replace('FIPS ', 'F'), r.category,
+        r.bytes.publicKey, r.bytes.secretKey, r.bytes.payload, r.bytes.handshakeTotal,
+        r.security.classical, r.security.quantum,
+        shortNum(r.workUnits.keygen), shortNum(r.workUnits.primary), shortNum(r.workUnits.secondary)
+      ]));
+    const metric = $('mx-metric').value;
+    if (metric === 'work') {
+      groupedBars('mx-chart', rows.map(r => ({
+        label: r.name.replace('SLH-DSA-', 'SLH-'),
+        values: [Math.log10(r.workUnits.keygen), Math.log10(r.workUnits.primary)]
+      })), [
+        { label: 'keygen (log10)', color: SERIES[0] },
+        { label: 'sign / encaps (log10)', color: SERIES[1] }
+      ], { max: Math.log10(Math.max(...rows.map(r => r.workUnits.primary))), ticks: 5, padL: 118, rowH: 22, fmt: v => shortNum(Math.pow(10, v)) + ' wu' });
+      legend('mx-legend', [
+        { label: 'key generation work (log10 scale)', color: SERIES[0] },
+        { label: 'sign or encapsulate work (log10 scale)', color: SERIES[1] }
+      ]);
+    } else if (metric === 'security') {
+      groupedBars('mx-chart', rows.map(r => ({
+        label: r.name.replace('SLH-DSA-', 'SLH-'),
+        values: [r.security.classical, r.security.quantum]
+      })), [
+        { label: 'classical bits', color: SERIES[0] },
+        { label: 'quantum bits', color: SERIES[1] }
+      ], { max: 256, ticks: 4, padL: 118, rowH: 26, directLabels: true });
+      legend('mx-legend', [
+        { label: 'classical bit security', color: SERIES[0] },
+        { label: 'post-quantum bit security', color: SERIES[1] }
+      ]);
+    } else {
+      groupedBars('mx-chart', rows.map(r => ({
+        label: r.name.replace('SLH-DSA-', 'SLH-'),
+        values: [r.bytes.publicKey, r.bytes.payload]
+      })), [
+        { label: 'pk / ek bytes', color: SERIES[0] },
+        { label: 'ct / sig bytes', color: SERIES[1] }
+      ], { max: Math.max(...rows.map(r => r.bytes.payload)), ticks: 4, padL: 118, rowH: 24, fmt: v => shortNum(v) + ' B' });
+      legend('mx-legend', [
+        { label: 'public or encapsulation key bytes', color: SERIES[0] },
+        { label: 'ciphertext or signature bytes', color: SERIES[1] }
+      ]);
+    }
+    const derivedOk = rows.every(r => r.publishedBytesMatch);
+    const kemRows = rows.filter(r => r.role === 'kem');
+    const measuredOk = kemRows.every(r => r.measuredMatchesSpec !== false);
+    chips('mx-checks', [
+      { t: rows.length + ' parameter sets', tone: 'info' },
+      { t: 'derived bytes == published: ' + (derivedOk ? 'OK' : 'FAIL'), tone: derivedOk ? 'ok' : 'bad' },
+      { t: 'KEM measured == spec: ' + (kemRows.length === 0 || measuredOk ? 'OK' : 'FAIL'), tone: kemRows.length === 0 || measuredOk ? 'ok' : 'bad' },
+      { t: 'cost model ' + MX.COST_MODEL, tone: 'info' }
+    ]);
+  }
+  ['mx-family', 'mx-sort', 'mx-metric'].forEach(id => $(id).addEventListener('change', () => {
+    renderMatrix();
+    announce('Parameter matrix updated: ' + mxRows().length + ' rows.');
+  }));
+
+  // ---- deterministic benchmark report -------------------------------------
+  let reportJSON = '';
+  let reportCSV = '';
+  function downloadText(name, text, type) {
+    const blob = new Blob([text], { type });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  function buildReport() {
+    const seedEl = $('report-seed');
+    const seed = seedEl.value.trim();
+    if (!seed || seed.length > 64) {
+      chips('report-checks', [{ t: 'seed needs 1 to 64 characters', tone: 'bad' }]);
+      announce('Report seed is invalid; enter 1 to 64 characters.');
+      seedEl.focus();
+      return;
+    }
+    $('report-output').textContent = 'Computing benchmark report...';
+    setTimeout(() => {
+      try {
+        const rep = MX.benchmarkReport({ seed, sweepCount: Number($('report-sweeps').value) });
+        reportJSON = JSON.stringify(rep, null, 2);
+        reportCSV = MX.reportCsv(rep);
+        $('report-output').textContent = reportJSON;
+        const checks = Object.values(rep.selfChecks);
+        chips('report-checks', [
+          { t: 'fingerprint ' + rep.fingerprint.slice(0, 16) + '...', tone: 'ok' },
+          { t: rep.matrix.length + ' parameter sets', tone: 'info' },
+          { t: 'self checks ' + checks.filter(Boolean).length + '/' + checks.length, tone: checks.every(Boolean) ? 'ok' : 'bad' },
+          { t: rep.costModel.name, tone: 'info' }
+        ]);
+        announce('Benchmark report ready: ' + rep.matrix.length + ' parameter sets, fingerprint ' + rep.fingerprint.slice(0, 12) + '.');
+      } catch (err) {
+        $('report-output').textContent = 'Report failed: ' + err.message;
+        chips('report-checks', [{ t: 'report error', tone: 'bad' }]);
+        announce('Benchmark report failed: ' + err.message);
+      }
+    }, 30);
+  }
+  $('report-build').addEventListener('click', buildReport);
+  $('report-json').addEventListener('click', () => {
+    if (!reportJSON) { $('report-output').textContent = 'Press "Build report" first.'; return; }
+    downloadText('pqc-vault-bench-benchmark.json', reportJSON, 'application/json');
+    announce('Benchmark JSON downloaded.');
+  });
+  $('report-csv').addEventListener('click', () => {
+    if (!reportCSV) { $('report-output').textContent = 'Press "Build report" first.'; return; }
+    downloadText('pqc-vault-bench-benchmark.csv', reportCSV, 'text/csv');
+    announce('Benchmark CSV downloaded.');
+  });
+  $('report-copy').addEventListener('click', () => {
+    if (!reportJSON) { $('report-output').textContent = 'Press "Build report" first.'; return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(reportJSON).then(
+        () => announce('Benchmark JSON copied to clipboard.'),
+        () => { $('report-output').textContent = reportJSON; }
+      );
+    }
   });
 
   // ---- vectors ------------------------------------------------------------
@@ -926,7 +1111,7 @@
     renderWOTS();
     renderSecurity();
     setTimeout(() => { renderKEM(); renderXMSS(true); }, 40);
-    setTimeout(() => { renderVerification(); }, 140);
+    setTimeout(() => { renderVerification(); renderMatrix(); }, 140);
     setTimeout(() => { renderQdayInitial(); }, 260);
   }
   renderAll();

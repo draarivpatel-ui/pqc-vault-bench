@@ -255,3 +255,24 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 @media (max-width: 560px) {
   .qday-field-row { grid-template-columns: 1fr; gap: 0; }
 }
+
+/* Keyboard navigation and skip link */
+.skip-link {
+  position: absolute; left: 16px; top: -60px; z-index: 60;
+  background: var(--accent-strong); color: #fff; text-decoration: none;
+  padding: 10px 16px; border-radius: 0 0 10px 10px; font-size: 13px; font-weight: 650;
+  transition: top .15s ease;
+}
+.skip-link:focus { top: 0; }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 2px;
+}
+svg [tabindex]:focus-visible { outline: none; }
+svg [tabindex]:focus { stroke: var(--accent); stroke-width: 1.5; }
+
+/* FIPS parameter matrix */
+.mx-bar { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin-bottom: 20px; }
+@media (max-width: 560px) {
+  .mx-bar { flex-direction: column; align-items: stretch; }
+}

@@ -9,7 +9,9 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
 <div class="grain" aria-hidden="true"></div>
+<div id="a11y-live" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <header class="site-head">
   <div class="wrap head-inner">
@@ -24,6 +26,7 @@
       <a href="#xmss">XMSS</a>
       <a href="#security">Q-Day</a>
       <a href="#verification">Verify</a>
+      <a href="#matrix">Matrix</a>
       <a href="#qday">Aevum</a>
       <a href="#vectors">Vectors</a>
     </nav>
@@ -31,7 +34,7 @@
   </div>
 </header>
 
-<main class="wrap">
+<main class="wrap" id="main">
 
   <section class="hero">
     <div class="hero-copy">
@@ -53,7 +56,7 @@
       <div class="hero-stats" role="group" aria-label="Workbench facts">
         <div class="stat"><span class="stat-num" id="stat-q">3329</span><span class="stat-label">ring modulus q</span></div>
         <div class="stat"><span class="stat-num" id="stat-n">256</span><span class="stat-label">polynomial degree n</span></div>
-        <div class="stat"><span class="stat-num" id="stat-tests">179</span><span class="stat-label">passing tests</span></div>
+        <div class="stat"><span class="stat-num" id="stat-tests">258</span><span class="stat-label">passing tests</span></div>
         <div class="stat"><span class="stat-num">0</span><span class="stat-label">runtime dependencies</span></div>
       </div>
     </div>
@@ -288,6 +291,75 @@
     </div>
   </section>
 
+  <!-- ================= FIPS MATRIX ================= -->
+  <section id="matrix" class="section">
+    <div class="section-head">
+      <h2>FIPS 203 / 204 / 205 parameter matrix</h2>
+    </div>
+    <div class="card">
+      <h3>Every approved parameter set, side by side</h3>
+      <p class="card-sub">All twelve NIST-standard parameter sets with exact byte accounting, bit-security levels and a deterministic operation-cost model. Byte counts are recomputed from the packing formulas in each standard and cross checked against the published sizes.</p>
+      <div class="mx-bar">
+        <div class="field inline">
+          <label for="mx-family">Standard</label>
+          <select id="mx-family">
+            <option value="all" selected>All standards</option>
+            <option value="FIPS 203">FIPS 203 (ML-KEM)</option>
+            <option value="FIPS 204">FIPS 204 (ML-DSA)</option>
+            <option value="FIPS 205">FIPS 205 (SLH-DSA)</option>
+          </select>
+        </div>
+        <div class="field inline">
+          <label for="mx-sort">Sort rows by</label>
+          <select id="mx-sort">
+            <option value="standard" selected>Standard and security</option>
+            <option value="bandwidth">Handshake bytes</option>
+            <option value="primary">Sign / encaps work</option>
+            <option value="bytes">Signature / ciphertext bytes</option>
+          </select>
+        </div>
+        <div class="field inline">
+          <label for="mx-metric">Chart metric</label>
+          <select id="mx-metric">
+            <option value="bandwidth" selected>Handshake bytes</option>
+            <option value="work">Work units (log scale)</option>
+            <option value="security">Bit security</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap"><table id="mx-table" class="data-table"><caption class="sr-only">FIPS 203, 204 and 205 parameter sets with byte sizes, security levels and deterministic work costs</caption></table></div>
+      <div id="mx-chart" class="chart"></div>
+      <div class="chart-legend" id="mx-legend"></div>
+      <div class="check-row" id="mx-checks"></div>
+    </div>
+    <div class="card">
+      <h3>Deterministic benchmark report</h3>
+      <p class="card-sub">One click builds a reproducible JSON or CSV report: every matrix row, a measured KEM sweep per parameter set, exact byte tables and a SHA-256 fingerprint over the canonical payload. Same seed and sweep count, same bytes.</p>
+      <div class="mx-bar">
+        <div class="field inline">
+          <label for="report-seed">Report seed</label>
+          <input type="text" id="report-seed" value="qday-bench-2026" spellcheck="false" maxlength="64" autocomplete="off">
+        </div>
+        <div class="field inline">
+          <label for="report-sweeps">Sweep seeds per KEM set</label>
+          <select id="report-sweeps">
+            <option value="4">4</option>
+            <option value="8" selected>8</option>
+            <option value="12">12</option>
+          </select>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="report-build" type="button">Build report</button>
+        <button class="btn btn-ghost" id="report-json" type="button">Download .json</button>
+        <button class="btn btn-ghost" id="report-csv" type="button">Download .csv</button>
+        <button class="btn btn-ghost" id="report-copy" type="button">Copy JSON</button>
+      </div>
+      <div class="check-row" id="report-checks" aria-live="polite"></div>
+      <pre id="report-output" class="code-block" aria-label="Benchmark report JSON">Press "Build report" to compute the deterministic benchmark bundle.</pre>
+    </div>
+  </section>
+
   <!-- ================= QDAY AEVUM ================= -->
   <section id="qday" class="section">
     <div class="section-head">
@@ -389,6 +461,7 @@
 <script src="src/pqc.js"></script>
 <script src="src/analysis.js"></script>
 <script src="src/qday-aevum.js"></script>
+<script src="src/parammatrix.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

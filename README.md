@@ -16,6 +16,8 @@ Live demo: https://aariv.me/pqc-vault-bench/
 - **Grover / Shor security analyzer** for secp256k1 ECDSA, RSA-2048, SHA-256, ML-KEM-768, ML-DSA-65 and SLH-DSA-128s, plus a UTXO quantum-exposure risk scorer and hybrid-signature analysis.
 - **Hybrid migration and byte-accounting tables**: exact key, ciphertext and signature byte counts derived from the real implementation, and bit-security envelopes for classical plus post-quantum pairs.
 - **QDay / Aevum Testnet (`tUSD8`) integration** (`src/qday-aevum.js`): official Aevum testnet parameters (`chainId: 44005` / `0xabe5`, RPC `https://rpc-test.qday.info`, official `tUSD8` ERC-20 `0x456569838f1d43009A91ebA4263147Afd7233483`, explorer and faucet links), pure JS ERC-20 ABI encoders/decoders (`balanceOf`, `decimals`, `symbol`, `name`, `totalSupply`, `transfer`, `approve`), a Post-Quantum Vault Settlement Anchor binding ML-KEM / ML-DSA risk attestations and XMSS hash-based signatures to `tUSD8` transfer calldata, a read-only JSON-RPC probe with deterministic offline simulation fallback, and EIP-1193 wallet helpers (`wallet_addEthereumChain`, `wallet_switchEthereumChain`, `eth_sendTransaction`). The anchor payload is canonically bound to chainId, token, payer, merchant, spend cap, a fresh random nonce, an enforced deadline, and the vault XMSS root; a seventeen-check verifier proves every binding, and the send path spends only verified payload fields, so a swapped `txRequest`, an expired deadline, a replayed anchor or a foreign-tree signature all fail closed.
+- **FIPS 203 / 204 / 205 parameter matrix** (`src/parammatrix.js`): all twelve approved parameter sets side by side. Byte sizes are recomputed from the packing formulas in each standard and cross checked against the published values, bit-security levels combine the workbench estimator with NIST category floors, and a deterministic operation-cost model counts NTT transforms, ring products, XOF absorbs and hash invocations closed-form in the parameters, including the FIPS 204 signing-repetition estimate and the FIPS 205 hypertree hash workload. A normalized latency index compares every set against ML-KEM-512 key generation.
+- **One-click deterministic benchmark report** in JSON and CSV with explicit run parameters (seed, sweep count, cost-model version) and a SHA-256 fingerprint over the canonical payload, so the same inputs reproduce byte-identical exports.
 - **Deterministic hex test-vector exporter** producing a reproducible JSON bundle with copy and download controls. A second export produces the full verification bundle with every self check, the KEM sweep, the reduction certificate and the resource tables.
 
 ## Quick start
@@ -37,10 +39,10 @@ npm test
 Which runs:
 
 ```
-node --test test/pqc.test.js test/analysis.test.js test/qday-aevum.test.js test/compliance.test.js
+node --test test/pqc.test.js test/analysis.test.js test/qday-aevum.test.js test/parammatrix.test.js test/compliance.test.js
 ```
 
-179 passing tests (100 core, 30 analysis, 34 QDay / Aevum integration, 15 compliance) cover NTT algebra, SHA-256, bit packing, error sampling, all four KEM parameter sets, WOTS+ and XMSS forgery resistance, security estimators, test-vector determinism, Montgomery and Barrett reduction, KEM correctness sweeps, exact byte accounting, the reproducible verification bundle, QDay / Aevum network constants, ERC-20 ABI encoding/decoding, PQC settlement anchor tamper detection, RPC parsing and offline simulation fallback, EIP-1193 wallet flows, and repository compliance rules (no dashes, no model attributions, no private details, doc consistency, no banned page furniture).
+258 passing tests (100 core, 30 analysis, 34 QDay / Aevum integration, 79 parameter matrix and benchmark report, 15 compliance) cover NTT algebra, SHA-256, bit packing, error sampling, all four KEM parameter sets, WOTS+ and XMSS forgery resistance, security estimators, test-vector determinism, Montgomery and Barrett reduction, KEM correctness sweeps, exact byte accounting, the reproducible verification bundle, QDay / Aevum network constants, ERC-20 ABI encoding/decoding, PQC settlement anchor tamper detection, RPC parsing and offline simulation fallback, EIP-1193 wallet flows, and repository compliance rules (no dashes, no model attributions, no private details, doc consistency, no banned page furniture).
 
 The adversarial layer pins the failure modes a vault must survive: wrong-length or non-array ciphertexts take the FO implicit-rejection path; malformed WOTS+/XMSS signatures and Merkle proofs fail closed instead of throwing; settlement anchors carry a fresh nonce so identical inputs are not replayable; expired deadlines, wrong chainIds, swapped transaction requests, foreign-tree XMSS signatures, schema mismatches and forged display amounts are all rejected by named checks; and the wallet-facing send path consumes only the verified payload calldata and payer, so a mutated `txRequest` can never redirect funds.
 
@@ -52,6 +54,7 @@ Individual suites:
 npm run test:core         # 100 tests
 npm run test:analysis     # 30 tests
 npm run test:qday         # 34 tests
+npm run test:matrix       # 79 tests
 npm run test:compliance   # 15 tests
 ```
 
@@ -61,7 +64,8 @@ npm run test:compliance   # 15 tests
 const pqc = require('./src/pqc.js');               // Node
 const analysis = require('./src/analysis.js');     // Node
 const qday = require('./src/qday-aevum.js');       // Node
-// or in the browser: window.PQC, window.PQCAnalysis, window.QDayAevum
+const matrix = require('./src/parammatrix.js');    // Node
+// or in the browser: window.PQC, window.PQCAnalysis, window.QDayAevum, window.PQCParamMatrix
 ```
 
 Selected core functions: `ntt`, `inverseNTT`, `baseCaseMultiply`, `polyMul`, `schoolbookMul`, `sha256`, `xof`, `MLKEM`, `cbdSample`, `wotsGenerate`, `wotsSign`, `wotsVerify`, `XMSS`, `merkleRoot`, `groverIterations`, `shorQubits`, `securityReport`, `hybridSecurity`, `migrationRisk`, `exportTestVectors`.
@@ -69,6 +73,8 @@ Selected core functions: `ntt`, `inverseNTT`, `baseCaseMultiply`, `polyMul`, `sc
 Selected analysis functions: `montgomeryReduce`, `barrettReduce`, `reductionCertificate`, `nttCertificate`, `kemCorrectnessSweep`, `kemSizeTable`, `hybridMigrationTable`, `quantumResourceTable`, `hashSignatureSizes`, `verificationBundle`.
 
 Selected QDay / Aevum functions: `NETWORK`, `CONTRACTS`, `SELECTORS`, `parseTokenUnits`, `formatTokenUnits`, `encodeBalanceOf`, `encodeTransfer`, `encodeApprove`, `decodeUint256`, `decodeUint8`, `decodeAbiString`, `decodeTransferCalldata`, `buildVaultAttestation`, `createSettlementAnchor`, `verifySettlementAnchor`, `rpcCall`, `probeTestnet`, `simulateTestnetProbe`, `buildAddChainParams`, `connectWallet`, `ensureAevumNetwork`, `sendTusd8Transfer`.
+
+Selected parameter-matrix functions: `fipsParameterMatrix`, `benchmarkReport`, `reportCsv`, `mlKemSpecBytes`, `mlDsaSpecBytes`, `slhDsaSpecBytes`, `mlDsaExpectedAttempts`, `mlKemWorkProfile`, `mlDsaWorkProfile`, `slhDsaWorkProfile`, `securityEstimate`, `csvEscape`.
 
 ## QDay / Aevum Testnet Verification
 
