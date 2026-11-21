@@ -335,13 +335,21 @@ test('W10: SLH small variants cost far more sign hashes than fast ones', () => {
 });
 
 test('W11: SLH-DSA-SHA2-128s sign cost is pinned to the exact hash count', () => {
-  // 14 FORS trees of height 12 plus 7 hypertree layers of 512-leaf XMSS
-  // trees with 35-chain WOTS+ keys and one T_len leaf compression per
-  // leaf: a real structural figure.
-  assert.equal(M.slhDsaWorkProfile('SLH-DSA-SHA2-128s').sign.hashCalls, 2130712.5);
+  // param-cost-v2 audit of FIPS 205 Algorithms 14-17 and 19 for 128s
+  // (k = 14 FORS trees of a = 12, d = 7 layers of h' = 9, len = 35):
+  //   PRF_msg + H_msg                                        2
+  //   fors_sign       = 14 x (3 x 2^12 - 2 - 12)      = 171,836
+  //   fors_pkFromSig  = 14 x (1 + 12) + 1 (the T_k)   =     183
+  //   xmss_sign       = 511 x 561 + 502 + (35 + 35 x 7.5)
+  //   ht_sign         = 7 xmss_sign + 6 xmss_pkFromSig (35 x 7.5 + 1 + 9)
+  const w = M.slhDsaWorkProfile('SLH-DSA-SHA2-128s');
+  const xmssSign = 511 * 561 + 502 + 297.5;
+  assert.equal(xmssSign, 287470.5);
+  assert.equal(w.sign.hashCalls, 2 + 14 * (3 * 4096 - 2 - 12) + 183 + 7 * xmssSign + 6 * 272.5);
+  assert.equal(w.sign.hashCalls, 2185949.5);
 });
 
-test('W11b: FIPS 205 Algorithm 6 counts one T_len compression per leaf', () => {
+test('W11b: FIPS 205 Algorithm 18 counts one T_len compression per leaf', () => {
   // 512 WOTS+ leaves at 560 chain hash calls each (35 chains x w=16),
   // one T_len compression per leaf, then 511 internal node hashes:
   // 512 * (560 + 1) + 511 = 287743.
@@ -349,10 +357,51 @@ test('W11b: FIPS 205 Algorithm 6 counts one T_len compression per leaf', () => {
   assert.equal(w.keygen.hashCalls, 287743);
   // SHAKE-128s shares the parameters, so the count is identical.
   assert.equal(M.slhDsaWorkProfile('SLH-DSA-SHAKE-128s').keygen.hashCalls, 287743);
-  // Verify traces the same pseudocode: per layer the WOTS+ chain
-  // completion, the T_len compression of the recovered key, and the h'
-  // auth path node hashes.
-  assert.equal(w.verify.hashCalls, 14 * (1 + 12) + 7 * (262.5 + 1 + 9));
+  // Verify traces Algorithm 20: 1 H_msg, then fors_pkFromSig
+  // (k x (1 F + a H) + 1 T_k), then ht_verify: per layer the WOTS+
+  // chain completion, the T_len compression of the recovered key and
+  // the h' auth path node hashes.
+  assert.equal(w.verify.hashCalls, 1 + (14 * 13 + 1) + 7 * (262.5 + 1 + 9));
+  assert.equal(w.verify.hashCalls, 2091.5);
+});
+
+test('W16: every SLH-DSA sign and verify total matches the FIPS 205 closed form', () => {
+  // Recomputes the audited formula straight from the parameter set for
+  // all twelve officially named sets, so a silent formula edit fails.
+  for (const name of Object.keys(M.SLH_DSA_PARAMS)) {
+    const p = M.SLH_DSA_PARAMS[name];
+    const len = 2 * p.n + 3;
+    const leaves = Math.pow(2, p.hPrime);
+    const wotsPkGen = len * 16 + 1;          // len x (PRF + 15 F) + T_len
+    const wotsSign = len + len * 7.5;        // len PRF + uniform-digit expectation
+    const wotsPkFromSig = len * 7.5 + 1;     // chain completions + T_len
+    const forsSign = p.kFors * (3 * Math.pow(2, p.a) - 2 - p.a);
+    const forsPkFromSig = p.kFors * (1 + p.a) + 1;
+    const xmssSign = (leaves - 1) * wotsPkGen + (leaves - 1 - p.hPrime) + wotsSign;
+    const xmssPkFromSig = wotsPkFromSig + p.hPrime;
+    const w = M.slhDsaWorkProfile(name);
+    assert.equal(w.sign.hashCalls,
+      2 + forsSign + forsPkFromSig + p.d * xmssSign + (p.d - 1) * xmssPkFromSig, name);
+    assert.equal(w.verify.hashCalls, 1 + forsPkFromSig + p.d * xmssPkFromSig, name);
+  }
+});
+
+test('W17: the 128s sign profile includes all 57,344 FORS secret-value PRFs', () => {
+  // The reviewed defect charged each FORS leaf one operation and dropped
+  // the fors_skGen PRF. Per Algorithm 16 one tree runs 2^a PRF +
+  // (2^a - 1) F + (2^a - 1 - a) H = 3 * 2^a - 2 - a calls: the revealed
+  // value plus every auth-path leaf secret.
+  const w = M.slhDsaWorkProfile('SLH-DSA-SHA2-128s');
+  const htSign = 7 * (511 * 561 + 502 + 297.5) + 6 * 272.5;
+  const forsPart = w.sign.hashCalls - 2 - htSign;
+  // fors_sign + fors_pkFromSig = 14 x 12274 + 183.
+  assert.equal(forsPart, 14 * 12274 + 183);
+  // The PRF term inside it is 14 x 2^12 = 57,344.
+  const prfCalls = 14 * Math.pow(2, 12);
+  const fCalls = 14 * (Math.pow(2, 12) - 1);
+  const hCalls = 14 * (Math.pow(2, 12) - 1 - 12);
+  assert.equal(prfCalls, 57344);
+  assert.equal(prfCalls + fCalls + hCalls + 183, forsPart);
 });
 
 test('W12: SLH verify is always at least an order cheaper than sign', () => {
@@ -478,9 +527,9 @@ test('M12: categories are monotone within each standard', () => {
 // ---------------------------------------------------------------
 test('R1: the report declares schema, version and cost model', () => {
   const r = M.benchmarkReport({ seed: 't' });
-  assert.equal(r.schema, 'pqc-vault-bench/benchmark-v1');
+  assert.equal(r.schema, 'pqc-vault-bench/benchmark-v2');
   assert.equal(typeof r.workbenchVersion, 'string');
-  assert.equal(r.costModel.name, 'param-cost-v1');
+  assert.equal(r.costModel.name, 'param-cost-v2');
   assert.equal(r.costModel.weights, M.COST_WEIGHTS);
 });
 
@@ -531,8 +580,28 @@ test('R9: sweeps can be excluded and the report stays valid', () => {
   const r = M.benchmarkReport({ seed: 'no-sweeps', sweeps: false });
   assert.equal(r.sweeps.length, 0);
   assert.equal(r.runParameters.sweepsIncluded, false);
+  assert.equal(r.runParameters.sweepCount, 0);
   assert.match(r.fingerprint, /^[0-9a-f]{64}$/);
   assert.equal(r.selfChecks.sweepsClean, true);
+});
+
+test('R9b: a sweep count option cannot leak into a zero-sweep report', () => {
+  const r = M.benchmarkReport({ seed: 'no-sweeps', sweeps: false, sweepCount: 20 });
+  assert.equal(r.runParameters.sweepsIncluded, false);
+  assert.equal(r.runParameters.sweepCount, 0);
+  assert.equal(r.sweeps.length, 0);
+});
+
+test('R13: the cost model reports v2 and exports its counting convention', () => {
+  const r = M.benchmarkReport({ seed: 'v2' });
+  assert.equal(r.costModel.name, 'param-cost-v2');
+  assert.equal(r.costModel.convention, M.SLH_DSA_COUNT_CONVENTION);
+  assert.match(r.costModel.convention, /FIPS 205/);
+  assert.match(r.costModel.convention, /expectation/);
+  // The changelog names the prior version so two reports can never be
+  // confused for the same model.
+  assert.match(r.costModel.changelog, /param-cost-v1/);
+  assert.match(r.costModel.changelog, /param-cost-v2/);
 });
 
 test('R10: the fingerprint covers the payload, not itself', () => {
@@ -577,20 +646,21 @@ test('C2b: the CSV leads with a labeled provenance block', () => {
   const rep = M.benchmarkReport({ seed: 'prov', sweepCount: 4 });
   const lines = M.reportCsv(rep).split('\n');
   assert.equal(lines[0], '# report: pqc-vault-bench deterministic benchmark CSV');
-  assert.equal(lines[1], '# schema: pqc-vault-bench/benchmark-v1');
+  assert.equal(lines[1], '# schema: pqc-vault-bench/benchmark-v2');
   assert.equal(lines[2], '# workbench version: ' + rep.workbenchVersion);
   assert.equal(lines[3], '# report seed: prov');
   assert.equal(lines[4], '# cost model: ' + rep.costModel.name);
   assert.equal(lines[5], '# sweep count: 4');
-  assert.equal(lines[6], '# JSON payload SHA-256 fingerprint: ' + rep.fingerprint);
-  assert.match(lines[6], /[0-9a-f]{64}$/);
+  assert.equal(lines[6], '# sweeps included: true');
+  assert.equal(lines[7], '# JSON payload SHA-256 fingerprint: ' + rep.fingerprint);
+  assert.match(lines[7], /[0-9a-f]{64}$/);
 });
 
 test('C2c: a hostile seed cannot inject a row or a formula into the provenance block', () => {
   const rep = M.benchmarkReport({ seed: '=cmd\n+1\n@x\t-evil', sweepCount: 4 });
   const csv = M.reportCsv(rep);
   const comments = csv.split('\n').filter(l => l.startsWith('#'));
-  assert.equal(comments.length, 7);
+  assert.equal(comments.length, 8);
   const seedLine = comments.find(l => l.startsWith('# report seed: '));
   assert.equal(seedLine, '# report seed: =cmd +1 @x -evil');
   assert.equal(csvDataLines(csv).length, 19);
@@ -676,6 +746,13 @@ test('C10: the CSV survives a report without sweeps', () => {
   assert.equal(lines[1].split(',')[17], '');
 });
 
+test('C11: a zero-sweep CSV reports sweeps included false and sweep count 0', () => {
+  const rep = M.benchmarkReport({ seed: 'csv', sweeps: false });
+  const comments = M.reportCsv(rep).split('\n').filter(l => l.startsWith('#'));
+  assert.ok(comments.includes('# sweep count: 0'));
+  assert.ok(comments.includes('# sweeps included: false'));
+});
+
 // ---------------------------------------------------------------
 // Section E: edge cases and cross-module consistency
 // ---------------------------------------------------------------
@@ -716,9 +793,9 @@ test('E4: workUnits is linear in each primitive class', () => {
 });
 
 test('E5: the matrix and report expose stable version stamps', () => {
-  assert.equal(M.WORKBENCH_VERSION, '1.1.0');
-  assert.equal(M.REPORT_SCHEMA, 'pqc-vault-bench/benchmark-v1');
-  assert.equal(M.COST_MODEL, 'param-cost-v1');
+  assert.equal(M.WORKBENCH_VERSION, '1.2.0');
+  assert.equal(M.REPORT_SCHEMA, 'pqc-vault-bench/benchmark-v2');
+  assert.equal(M.COST_MODEL, 'param-cost-v2');
 });
 
 test('E6: every latency index is finite, positive and normalized', () => {

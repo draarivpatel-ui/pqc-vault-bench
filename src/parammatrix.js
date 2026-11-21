@@ -18,9 +18,9 @@
 }(typeof globalThis !== 'undefined' ? globalThis : this, function (P, A) {
   'use strict';
 
-  const WORKBENCH_VERSION = '1.1.0';
-  const REPORT_SCHEMA = 'pqc-vault-bench/benchmark-v1';
-  const COST_MODEL = 'param-cost-v1';
+  const WORKBENCH_VERSION = '1.2.0';
+  const REPORT_SCHEMA = 'pqc-vault-bench/benchmark-v2';
+  const COST_MODEL = 'param-cost-v2';
 
   // ============================================================
   // Section 1: approved parameter sets and exact byte accounting
@@ -163,6 +163,15 @@
   // ============================================================
   const COST_WEIGHTS = Object.freeze({ ntt: 4, polyProduct: 4, hashCall: 1, sample: 1 });
 
+  // Exported with every report so a consumer can see the exact
+  // convention the FIPS 205 figures were produced under; the
+  // term-by-term derivation sits with slhDsaWorkProfile.
+  const SLH_DSA_COUNT_CONVENTION = 'every FIPS 205 hash-primitive invocation ' +
+    '(PRF, PRF_msg, H_msg, F, H and the T_k / T_len compressions) counts as one unit, ' +
+    'exactly as Algorithms 5-20 execute it; the only approximation is the WOTS+ ' +
+    'signature chain length, charged at the uniform base-w digit expectation ' +
+    '(w - 1) / 2 per chain';
+
   function workUnits(profile) {
     const w = COST_WEIGHTS;
     return w.ntt * ((profile.nttForward || 0) + (profile.nttInverse || 0)) +
@@ -263,30 +272,74 @@
   }
 
   // Hash invocations for the FIPS 205 hypertree construction. Signing
-  // reveals a full XMSS tree per layer, which is why the small-signature
-  // variants cost orders of magnitude more hash work than the fast ones.
+  // reveals an XMSS authentication path per layer, which is why the
+  // small-signature variants cost orders of magnitude more hash work
+  // than the fast ones.
+  //
+  // Counting convention (param-cost-v2): every execution of a FIPS 205
+  // hash-family primitive counts as one hashCall: PRF, PRF_msg, H_msg,
+  // F, H and the T_l compressions (T_len on WOTS+ public keys and XMSS
+  // leaves, T_k on the FORS roots). Address writes, base-w digit
+  // extraction and tree/leaf index arithmetic are free. Each term below
+  // traces named lines of Algorithms 5-20 and is exact in the parameter
+  // set, with one documented approximation: a WOTS+ signature chain
+  // runs chain(sk, 0, s) where s is a base-w digit of the message or
+  // checksum, so wots_sign and wots_pkFromSig are charged the
+  // uniform-digit expectation (w - 1) / 2 F calls per chain. Every
+  // other term, including every PRF that derives a secret value, is
+  // counted invocation for invocation.
   function slhDsaWorkProfile(name) {
     const p = SLH_DSA_PARAMS[name];
     if (!p) throw new RangeError('unknown SLH-DSA parameter set: ' + name);
     const len = slhDsaLen(p);
     const leaves = Math.pow(2, p.hPrime);
-    const wotsPkHash = len * SLH_W;                          // chains + secret key evaluations
-    const wotsSignHash = len * (SLH_W - 1) / 2;              // expected steps to signature values
-    // FIPS 205 Algorithm 6 / Algorithm 14 treehash compresses each WOTS+
-    // public key with T_len before it becomes a tree leaf, so every leaf
-    // costs the chain evaluations plus one compression call.
-    const xmssTree = leaves * (wotsPkHash + 1) + (leaves - 1); // leaves incl. T_len + tree nodes
-    const forsBuild = p.kFors * (Math.pow(2, p.a + 1) - 1);  // k FORS trees, leaves and nodes
-    const forsVerify = p.kFors * (1 + p.a);                  // leaf recompute + auth path
-    // Sign: build the k FORS trees, then per hypertree layer rebuild the
-    // XMSS tree for its auth path and run the expected WOTS+ chain steps.
-    // Verify: per FORS key one leaf F plus a auth path; per layer the
-    // WOTS+ chain completion, the T_len leaf compression of the recovered
-    // public key, and the h' node hashes up the auth path.
+    // Algorithm 6 wots_pkGen: len chains x (1 PRF + (w - 1) F) + 1 T_len.
+    const wotsPkGen = len * SLH_W + 1;
+    // Algorithm 7 wots_sign: len chains x (1 PRF + s F), charged at the
+    // uniform-digit expectation s = (w - 1) / 2 from the convention.
+    const wotsSign = len + len * (SLH_W - 1) / 2;
+    // Algorithm 8 wots_pkFromSig: len chain completions x (w - 1 - s) F,
+    // the same expectation, + 1 T_len. No PRF: the signature carries
+    // the start value of each chain.
+    const wotsPkFromSig = len * (SLH_W - 1) / 2 + 1;
+    // Algorithm 16 fors_sign, per tree: 1 PRF (Algorithm 14 fors_skGen)
+    // reveals the secret value; the auth path is one Algorithm 15
+    // fors_node sibling subtree per level j = 0..a-1. A height-j
+    // subtree runs 2^j leaves x (1 PRF + 1 F) + (2^j - 1) H, so a
+    // signing path totals (2^a - 1) PRF + (2^a - 1) F + (2^a - 1 - a) H
+    // and one tree totals 2^a PRF + (2^a - 1) F + (2^a - 1 - a) H
+    // = 3 * 2^a - 2 - a calls. For 128s the FORS side alone runs
+    // k * 2^a = 14 * 4096 = 57,344 secret-value PRFs.
+    const forsSignPerTree = 3 * Math.pow(2, p.a) - 2 - p.a;
+    // Algorithm 17 fors_pkFromSig, run inside both Algorithms 19 and 20:
+    // per tree 1 F on the revealed value + a H merges up the auth path,
+    // then one T_k compresses all k roots.
+    const forsPkFromSig = p.kFors * (1 + p.a) + 1;
+    // Algorithm 9 xmss_node over a full height-h' tree: 2^h' leaves of
+    // one wots_pkGen each + 2^h' - 1 internal H. Algorithm 18
+    // slh_keygen_internal is exactly this on the top hypertree layer.
+    const xmssTree = leaves * wotsPkGen + (leaves - 1);
+    // Algorithm 10 xmss_sign: the auth path is one Algorithm 9 sibling
+    // subtree per level j = 0..h'-1, i.e. 2^h' - 1 leaves and
+    // 2^h' - 1 - h' internal nodes, then one wots_sign.
+    const xmssSign = (leaves - 1) * wotsPkGen + (leaves - 1 - p.hPrime) + wotsSign;
+    // Algorithm 11 xmss_pkFromSig: one wots_pkFromSig, then h' H merges
+    // up the auth path to the tree root.
+    const xmssPkFromSig = wotsPkFromSig + p.hPrime;
+    // Algorithm 12 ht_sign: one xmss_sign per hypertree layer plus one
+    // xmss_pkFromSig between successive layers to recover the root that
+    // the next layer signs: d signatures and d - 1 root recoveries.
+    // Algorithm 13 ht_verify: one xmss_pkFromSig per layer.
+    const htSign = p.d * xmssSign + (p.d - 1) * xmssPkFromSig;
+    const htVerify = p.d * xmssPkFromSig;
+    // Algorithm 19 slh_sign_internal: 1 PRF_msg for the randomizer R +
+    // 1 H_msg for the digest + fors_sign + fors_pkFromSig + ht_sign.
+    // Algorithm 20 slh_verify_internal: 1 H_msg + fors_pkFromSig +
+    // ht_verify.
     return {
       keygen: { hashCalls: xmssTree },
-      sign: { hashCalls: forsBuild + p.d * (xmssTree + wotsSignHash) },
-      verify: { hashCalls: forsVerify + p.d * (wotsSignHash + 1 + p.hPrime) },
+      sign: { hashCalls: 2 + p.kFors * forsSignPerTree + forsPkFromSig + htSign },
+      verify: { hashCalls: 1 + forsPkFromSig + htVerify },
       wotsLen: len
     };
   }
@@ -389,11 +442,14 @@
   function benchmarkReport(options) {
     const opts = options || {};
     const seed = (typeof opts.seed === 'string' && opts.seed.trim()) ? opts.seed.trim() : 'pqc-vault-bench-report';
+    const runSweeps = opts.sweeps !== false;
     const parsed = Math.floor(Number(opts.sweepCount));
-    const sweepCount = Number.isFinite(parsed) ? Math.max(4, Math.min(48, parsed)) : 8;
+    // A report built with sweeps: false ran zero sweeps, so its
+    // provenance must say 0 rather than the sweep-path default.
+    const sweepCount = runSweeps ? (Number.isFinite(parsed) ? Math.max(4, Math.min(48, parsed)) : 8) : 0;
     const matrix = fipsParameterMatrix();
-    const sweeps = opts.sweeps === false ? [] :
-      Object.keys(ML_KEM_SPEC).map(param => A.kemCorrectnessSweep({ param, count: sweepCount, seed: seed + ':sweep:' + param }));
+    const sweeps = runSweeps ?
+      Object.keys(ML_KEM_SPEC).map(param => A.kemCorrectnessSweep({ param, count: sweepCount, seed: seed + ':sweep:' + param })) : [];
     const payload = {
       schema: REPORT_SCHEMA,
       workbenchVersion: WORKBENCH_VERSION,
@@ -401,7 +457,11 @@
       costModel: {
         name: COST_MODEL,
         weights: COST_WEIGHTS,
-        note: 'deterministic operation counts closed-form in the parameter sets; a relative cost model, not a wall-clock benchmark'
+        note: 'deterministic operation counts closed-form in the parameter sets; a relative cost model, not a wall-clock benchmark',
+        convention: SLH_DSA_COUNT_CONVENTION,
+        changelog: 'param-cost-v2 re-audits the SLH-DSA sign and verify profiles against FIPS 205 ' +
+          'Algorithms 14-17 and 19-20 and now counts the FORS secret-value PRFs, the T_k FORS-root ' +
+          'compression, and the PRF_msg / H_msg framing calls that param-cost-v1 omitted'
       },
       runParameters: {
         seed, sweepCount, sweepsIncluded: sweeps.length > 0,
@@ -464,6 +524,7 @@
       csvCommentLine('report seed', report.runParameters.seed),
       csvCommentLine('cost model', report.costModel.name),
       csvCommentLine('sweep count', report.runParameters.sweepCount),
+      csvCommentLine('sweeps included', report.runParameters.sweepsIncluded),
       csvCommentLine('JSON payload SHA-256 fingerprint', report.fingerprint),
       CSV_COLUMNS.join(',')
     ];
@@ -484,7 +545,7 @@
   }
 
   const api = {
-    WORKBENCH_VERSION, REPORT_SCHEMA, COST_MODEL,
+    WORKBENCH_VERSION, REPORT_SCHEMA, COST_MODEL, SLH_DSA_COUNT_CONVENTION,
     ML_KEM_SPEC, ML_DSA_PARAMS, ML_DSA_Q, SLH_DSA_PARAMS, SLH_W, CATEGORY_REFERENCE, COST_WEIGHTS,
     packBytes, mlKemSpecBytes, mlDsaSpecBytes, slhDsaLen, slhDsaM, slhDsaSpecBytes,
     securityEstimate, workUnits, mlKemWorkProfile, mlDsaWorkProfile, mlDsaExpectedAttempts,

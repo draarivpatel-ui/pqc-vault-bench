@@ -1,6 +1,6 @@
 {
   "name": "pqc-vault-bench",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Zero-dependency post-quantum cryptography and UTXO quantum-migration workbench",
   "private": true,
   "scripts": {
