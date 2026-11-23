@@ -460,7 +460,11 @@
   function MLKEM(options) {
     const opts = options || {};
     const paramName = opts.param || KEM_DEFAULT;
-    const params = KEM_PARAMS[paramName];
+    // An own-property check is required: KEM_PARAMS['__proto__'] and
+    // KEM_PARAMS['constructor'] resolve through Object.prototype, not to
+    // undefined, so a plain lookup smuggles hostile names through.
+    const params = Object.prototype.hasOwnProperty.call(KEM_PARAMS, paramName)
+      ? KEM_PARAMS[paramName] : null;
     if (!params) throw new RangeError('unknown ML-KEM parameter set: ' + paramName);
     const k = params.k;
 
@@ -778,6 +782,12 @@
   function XMSS(options) {
     const opts = options || {};
     const treeHeight = opts.height === undefined ? 3 : opts.height; // 2^height one-time keys
+    // The height bounds every leaf generated below: a fractional or huge
+    // height either silently builds a wrong-shaped tree or hangs the tab
+    // generating 2^height leaves, so fail fast on anything outside [1, 20].
+    if (!Number.isInteger(treeHeight) || treeHeight < 1 || treeHeight > 20) {
+      throw new RangeError('XMSS height must be an integer in [1, 20]: ' + treeHeight);
+    }
     const leafCount = 1 << treeHeight;
     const seedStr = opts.seed || 'xmss-default-seed';
     const leaves = [];
@@ -869,7 +879,10 @@
   }
 
   function analyzePrimitive(name) {
-    const p = PRIMITIVES[name];
+    // Same own-property guard as MLKEM: PRIMITIVES['__proto__'] resolves
+    // through the prototype chain and would silently pass this check.
+    const p = Object.prototype.hasOwnProperty.call(PRIMITIVES, name)
+      ? PRIMITIVES[name] : null;
     if (!p) throw new RangeError('unknown primitive: ' + name);
     return Object.assign({}, p, { name, quantumSafe: p.quantum >= 128 });
   }
@@ -880,7 +893,8 @@
 
   function hybridSecurity(a, b) {
     // A hybrid scheme is at least as strong as its strongest component.
-    const pa = PRIMITIVES[a], pb = PRIMITIVES[b];
+    const pa = Object.prototype.hasOwnProperty.call(PRIMITIVES, a) ? PRIMITIVES[a] : null;
+    const pb = Object.prototype.hasOwnProperty.call(PRIMITIVES, b) ? PRIMITIVES[b] : null;
     if (!pa || !pb) throw new RangeError('unknown primitive in hybrid pair');
     return {
       components: [a, b],

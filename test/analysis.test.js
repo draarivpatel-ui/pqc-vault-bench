@@ -235,3 +235,51 @@ test('E6: the security table in the bundle marks ECDSA as Shor broken', () => {
   assert.equal(ecdsa.quantum, 0);
   assert.equal(ecdsa.classical, 128);
 });
+
+// ---------------------------------------------------------------
+// Section F: hostile-input probes
+// ---------------------------------------------------------------
+test('F1: kemCorrectnessSweep clamps hostile counts and rejects bad params', () => {
+  assert.equal(A.kemCorrectnessSweep({ count: NaN, param: 'toy-64' }).count, 40);
+  assert.equal(A.kemCorrectnessSweep({ count: 0, param: 'toy-64' }).count, 40);
+  assert.equal(A.kemCorrectnessSweep({ count: -3, param: 'toy-64' }).count, 1);
+  assert.equal(A.kemCorrectnessSweep({ count: Infinity, param: 'toy-64' }).count, 400);
+  for (const bad of ['__proto__', 'constructor', 'ML-KEM-999']) {
+    assert.throws(() => A.kemCorrectnessSweep({ param: bad, count: 1 }), RangeError, bad);
+  }
+});
+
+test('F2: hashSignatureSizes fails closed on hostile XMSS heights', () => {
+  for (const bad of [NaN, -1, 0, 21, 25, 1.5, 'x']) {
+    assert.throws(() => A.hashSignatureSizes('s', bad), RangeError, String(bad));
+  }
+  const ok = A.hashSignatureSizes('s', 1);
+  assert.equal(ok.xmss.height, 1);
+  assert.equal(ok.xmss.leafCount, 2);
+});
+
+test('F3: verificationBundle stays deterministic under a hostile seed', () => {
+  const a = A.verificationBundle('=CMD()\n@evil');
+  const b = A.verificationBundle('=CMD()\n@evil');
+  assert.equal(JSON.stringify(a), JSON.stringify(b));
+  assert.equal(a.schema, 'pqc-vault-bench/verification-v2');
+  assert.ok(a.selfChecks.kemNoDecryptionFailures);
+});
+
+test('F4: hostile seeds cannot break the reduction or NTT certificates', () => {
+  const red = A.reductionCertificate(512);
+  assert.equal(red.allMatch, true);
+  const ntt = A.nttCertificate();
+  assert.equal(ntt.allPass, true);
+});
+
+test('F5: montgomery and barrett reducers handle edge residues', () => {
+  assert.equal(A.barrettReduce(0), 0);
+  assert.equal(A.montgomeryReduce(0), 0);
+  assert.equal(A.fromMont(A.toMont(Q - 1)), Q - 1);
+  // Montgomery identity: fromMont(montReduce(toMont(a) * toMont(b))) = a*b mod q.
+  for (const [a, b] of [[1, 1], [Q - 1, Q - 1], [0, Q - 1], [1234, 2345]]) {
+    const prod = A.fromMont(A.montgomeryReduce(A.toMont(a) * A.toMont(b)));
+    assert.equal(prod, P.mod(a * b), a + '*' + b);
+  }
+});

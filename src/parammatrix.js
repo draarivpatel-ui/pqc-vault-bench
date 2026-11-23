@@ -67,8 +67,15 @@
 
   function packBytes(coeffs, bits) { return Math.ceil(coeffs * bits / 8); }
 
+  // Lookups must use own-property checks: table['__proto__'] and
+  // table['constructor'] resolve through Object.prototype, not to
+  // undefined, so a plain index smuggles hostile names through.
+  function own(table, key) {
+    return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : null;
+  }
+
   function mlKemSpecBytes(name) {
-    const p = ML_KEM_SPEC[name];
+    const p = own(ML_KEM_SPEC, name);
     if (!p) throw new RangeError('unknown ML-KEM parameter set: ' + name);
     return {
       ekBytes: 384 * p.k + 32,
@@ -82,7 +89,7 @@
   // signature is c~ (lambda/4) || z || h, with h holding omega index bytes
   // plus k boundary bytes.
   function mlDsaSpecBytes(name) {
-    const p = ML_DSA_PARAMS[name];
+    const p = own(ML_DSA_PARAMS, name);
     if (!p) throw new RangeError('unknown ML-DSA parameter set: ' + name);
     const etaBits = p.eta === 2 ? 3 : 4;
     const zBits = Math.round(Math.log2(2 * p.gamma1));
@@ -103,7 +110,7 @@
   }
 
   function slhDsaSpecBytes(name) {
-    const p = SLH_DSA_PARAMS[name];
+    const p = own(SLH_DSA_PARAMS, name);
     if (!p) throw new RangeError('unknown SLH-DSA parameter set: ' + name);
     const len = slhDsaLen(p);
     return {
@@ -134,7 +141,7 @@
   });
 
   function securityEstimate(name, category) {
-    const referencePrimitive = CATEGORY_REFERENCE[category];
+    const referencePrimitive = own(CATEGORY_REFERENCE, category);
     if (!referencePrimitive) throw new RangeError('unknown NIST category: ' + category);
     // The estimator is keyed by scheme geometry; the two SLH-DSA hash
     // families share parameters, so SHA2 and SHAKE names map onto the
@@ -189,7 +196,7 @@
   // Counts trace the code path in src/pqc.js: the matrix XOF pulls 4N
   // bytes per polynomial and CBD samples pull ceil(2*eta*N/8) bytes.
   function mlKemWorkProfile(name) {
-    const spec = ML_KEM_SPEC[name];
+    const spec = own(ML_KEM_SPEC, name);
     if (!spec) throw new RangeError('unknown ML-KEM parameter set: ' + name);
     const k = spec.k, N = P.N;
     const matrixBlocks = k * k * Math.ceil(4 * N / 32);
@@ -231,7 +238,7 @@
   // acceptance estimate is the worst-case product the design uses, an
   // exact formula in gamma1, gamma2, beta, k and l.
   function mlDsaExpectedAttempts(name) {
-    const p = ML_DSA_PARAMS[name];
+    const p = own(ML_DSA_PARAMS, name);
     if (!p) throw new RangeError('unknown ML-DSA parameter set: ' + name);
     const pz = Math.pow((2 * (p.gamma1 - p.beta) + 1) / (2 * p.gamma1 + 1), 256 * p.l);
     const pr = Math.pow((2 * (p.gamma2 - p.beta) + 1) / (2 * p.gamma2 + 1), 256 * p.k);
@@ -240,7 +247,7 @@
   }
 
   function mlDsaWorkProfile(name) {
-    const p = ML_DSA_PARAMS[name];
+    const p = own(ML_DSA_PARAMS, name);
     if (!p) throw new RangeError('unknown ML-DSA parameter set: ' + name);
     const k = p.k, l = p.l;
     const keygen = {
@@ -289,7 +296,7 @@
   // other term, including every PRF that derives a secret value, is
   // counted invocation for invocation.
   function slhDsaWorkProfile(name) {
-    const p = SLH_DSA_PARAMS[name];
+    const p = own(SLH_DSA_PARAMS, name);
     if (!p) throw new RangeError('unknown SLH-DSA parameter set: ' + name);
     const len = slhDsaLen(p);
     const leaves = Math.pow(2, p.hPrime);

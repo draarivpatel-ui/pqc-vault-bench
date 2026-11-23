@@ -658,3 +658,88 @@ test('91: exportTestVectors exercises every self check path after hardening', ()
   const json = JSON.parse(JSON.stringify(v));
   assert.equal(json.ntt.inverseMatches, true);
 });
+
+// ---------------------------------------------------------------
+// Section 7: hostile-input hardening probes (tests 92-99)
+// ---------------------------------------------------------------
+test('92: hexToBytes rejects odd, non-hex, oversized-prefix and non-string inputs', () => {
+  for (const bad of ['0x12', 'abc', 'zz', '__proto__', '=CMD()', 12, null, undefined, ['aa']]) {
+    assert.throws(() => pqc.hexToBytes(bad), TypeError, String(bad));
+  }
+  assert.deepEqual(Array.from(pqc.hexToBytes('')), []);
+  const long = 'ab'.repeat(4096);
+  assert.equal(pqc.hexToBytes(long).length, 4096);
+});
+
+test('93: MLKEM constructor rejects hostile parameter names including prototype keys', () => {
+  for (const bad of ['__proto__', 'constructor', 'prototype', 'ML-KEM-999', 5, {}, []]) {
+    assert.throws(() => pqc.MLKEM({ param: bad }), RangeError, String(bad));
+  }
+  // Falsy values take the documented default-parameter path instead.
+  for (const def of ['', NaN, null, undefined]) {
+    assert.equal(pqc.MLKEM({ param: def }).param, pqc.KEM_DEFAULT, String(def));
+  }
+});
+
+test('94: MLKEM decapsulate implicitly rejects object-shaped ciphertexts', () => {
+  const kem = pqc.MLKEM({ param: 'toy-64' });
+  const keys = kem.deriveFromSeed('adv94');
+  const enc = kem.encapsulate(keys.ek, 'adv94:enc');
+  for (const bad of [{}, 'aabb', null, [1, 2, 3], enc.ciphertext.slice(0, enc.ciphertext.length - 1)]) {
+    const dec = kem.decapsulate(bad, keys.dk);
+    assert.ok(dec instanceof Uint8Array, 'implicit rejection must still return a key');
+    assert.equal(pqc.bytesEqual(dec, enc.sharedSecret), false, String(bad));
+  }
+});
+
+test('95: XMSS rejects hostile heights instead of building a wrong tree', () => {
+  for (const bad of [NaN, Infinity, -Infinity, -1, 0, 21, 25, 1.5, 'x', {}, []]) {
+    assert.throws(() => pqc.XMSS({ height: bad }), RangeError, String(bad));
+  }
+});
+
+test('96: XMSS accepts the full integer height range and still fails closed on garbage', () => {
+  for (const h of [1, 2, 3]) {
+    const x = pqc.XMSS({ height: h, seed: 'adv96:' + h });
+    assert.equal(x.leafCount, 1 << h);
+  }
+  const x = pqc.XMSS({ height: 1, seed: 'adv96' });
+  const sig = x.sign('m');
+  assert.equal(x.verify(sig), true);
+  assert.equal(x.verify(null), false);
+  assert.equal(x.verify({}), false);
+  assert.equal(x.verify({ index: 5 }), false);
+});
+
+test('97: wotsVerify returns false on every malformed signature shape', () => {
+  const kp = pqc.wotsGenerate('adv97');
+  const pk = pqc.wotsPublicKeyHex(kp);
+  const good = pqc.wotsSign('msg', kp);
+  for (const sig of [null, 'x', [], good.signature.slice(0, 66), good.signature.map(() => 'zz')]) {
+    assert.equal(pqc.wotsVerify('msg', sig, pk), false);
+  }
+  for (const hash of [null, 'zz', pk.slice(0, 32)]) {
+    assert.equal(pqc.wotsVerify('msg', good.signature, hash), false);
+  }
+});
+
+test('98: analyzePrimitive and hybridSecurity reject prototype keys', () => {
+  for (const bad of ['__proto__', 'constructor', 'hasOwnProperty', 'toString']) {
+    assert.throws(() => pqc.analyzePrimitive(bad), RangeError, bad);
+  }
+  assert.throws(() => pqc.hybridSecurity('__proto__', 'secp256k1 ECDSA'), RangeError);
+  assert.throws(() => pqc.hybridSecurity('secp256k1 ECDSA', 'constructor'), RangeError);
+  assert.throws(() => pqc.hybridSecurity('secp256k1 ECDSA', 'secp256k1 ECDSA'.slice(0, -1)), RangeError);
+});
+
+test('99: migrationRisk clamps hostile numeric fields instead of scoring NaN', () => {
+  for (const utxo of [
+    { publicKeyRevealed: true, valueBtc: NaN, ageBlocks: Infinity },
+    { publicKeyRevealed: true, valueBtc: 'x', ageBlocks: -5 },
+    { publicKeyRevealed: false, p2pkh: true, valueBtc: -0, ageBlocks: {} }
+  ]) {
+    const r = pqc.migrationRisk(utxo);
+    assert.ok(Number.isFinite(r.score) && r.score >= 0 && r.score <= 100, JSON.stringify(utxo));
+    assert.equal(typeof r.tier, 'string');
+  }
+});

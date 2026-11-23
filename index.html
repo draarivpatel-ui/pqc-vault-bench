@@ -28,6 +28,7 @@
       <a href="#verification">Verify</a>
       <a href="#matrix">Matrix</a>
       <a href="#qday">Aevum</a>
+      <a href="#lab">Lab</a>
       <a href="#vectors">Vectors</a>
     </nav>
     <button id="theme-toggle" class="theme-btn" type="button" aria-label="Toggle light or dark theme">Light</button>
@@ -56,7 +57,7 @@
       <div class="hero-stats" role="group" aria-label="Workbench facts">
         <div class="stat"><span class="stat-num" id="stat-q">3329</span><span class="stat-label">ring modulus q</span></div>
         <div class="stat"><span class="stat-num" id="stat-n">256</span><span class="stat-label">polynomial degree n</span></div>
-        <div class="stat"><span class="stat-num" id="stat-tests">276</span><span class="stat-label">passing tests</span></div>
+        <div class="stat"><span class="stat-num" id="stat-tests">457</span><span class="stat-label">passing tests</span></div>
         <div class="stat"><span class="stat-num">0</span><span class="stat-label">runtime dependencies</span></div>
       </div>
     </div>
@@ -431,6 +432,92 @@
     </div>
   </section>
 
+  <!-- ================= MIGRATION AND AUDIT WORKBENCH ================= -->
+  <section id="lab" class="section">
+    <div class="section-head">
+      <h2>Migration and audit workbench</h2>
+    </div>
+    <div class="card">
+      <h3>Treasury policy comparator</h3>
+      <p class="card-sub">Five migration regimes scored against a treasury profile. Byte figures recompute from the FIPS 203/204/205 packing formulas; work indexes recompute from the param-cost-v2 operation model and the exact SHA-256 call counts of the workbench XMSS construction. Rows are clickable and keyboard selectable.</p>
+      <div class="lab-bar">
+        <div class="field inline">
+          <label for="lab-profile">Treasury profile</label>
+          <select id="lab-profile">
+            <option value="hot-treasury">Hot treasury</option>
+            <option value="high-freq-settlement">High-frequency settlement</option>
+            <option value="cold-reserve">Cold reserve vault</option>
+            <option value="qday-aevum-tusd8" selected>QDay Aevum tUSD8 treasury</option>
+          </select>
+        </div>
+        <div class="field inline">
+          <label for="lab-utxos">UTXO count</label>
+          <input type="number" id="lab-utxos" value="40" min="1" max="10000000" step="1">
+        </div>
+        <div class="field inline">
+          <label for="lab-settlements">Settlements per year</label>
+          <input type="number" id="lab-settlements" value="1200" min="1" max="1000000000" step="1">
+        </div>
+      </div>
+      <div class="table-wrap"><table id="lab-table" class="data-table"><caption class="sr-only">Five post-quantum migration regimes compared on bytes, work index, harvest exposure and verdict for the selected treasury profile</caption></table></div>
+      <div class="check-row" id="lab-checks"></div>
+      <div class="readout" id="lab-detail" aria-live="polite"></div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Pareto tradeoff frontier</h3>
+        <p class="card-sub">Key plus payload bytes against normalized work index on log scales. The step line marks the non-dominated set across the five regimes; every point is keyboard focusable for its exact figures.</p>
+        <div id="lab-frontier" class="chart"></div>
+        <div class="chart-legend" id="lab-frontier-legend"></div>
+      </div>
+      <div class="card">
+        <h3>Adversarial replay matrix</h3>
+        <p class="card-sub">One click replays real tamper and forgery vectors against the loaded engine: ML-KEM ciphertext mutation and implicit rejection, WOTS+ checksum and chain forgery, XMSS foreign-tree and leaf-exhaustion rejection, and the seventeen-check tUSD8 anchor bindings.</p>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="lab-adv-run" type="button">Run tamper proofs</button>
+        </div>
+        <div class="check-row" id="lab-adv-checks"></div>
+        <div class="table-wrap"><table id="lab-adv-table" class="data-table"><caption class="sr-only">Adversarial tamper and forgery replay vectors with the engine check that blocked each one</caption></table></div>
+        <div class="verdict" id="lab-adv-verdict" role="status">Run the matrix to replay every attack vector against the live engine.</div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Audited brief exporter</h3>
+      <p class="card-sub">One digest-stamped payload feeds the fingerprint below, the JSON export, the CSV provenance header and the Markdown footer, so the checksum cannot diverge between surfaces. CSV cells are spreadsheet formula safe.</p>
+      <div class="lab-bar">
+        <div class="field inline">
+          <label for="lab-seed">Brief seed</label>
+          <input type="text" id="lab-seed" value="migration-lab-brief" maxlength="64" spellcheck="false" autocomplete="off">
+        </div>
+        <div class="field inline">
+          <label class="switch"><input type="checkbox" id="lab-shortcuts"><span>Single-key shortcuts: g cycles profile, b builds the brief</span></label>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="lab-brief-build" type="button">Build audited brief</button>
+        <button class="btn btn-ghost" id="lab-json" type="button">Download .json</button>
+        <button class="btn btn-ghost" id="lab-csv" type="button">Download .csv</button>
+        <button class="btn btn-ghost" id="lab-md" type="button">Download .md</button>
+        <button class="btn btn-ghost" id="lab-share" type="button">Copy share link</button>
+        <button class="btn btn-ghost" id="lab-verify" type="button">Verify digest / tamper check</button>
+      </div>
+      <div class="hex-block">
+        <div class="hex-row"><span>sha-256</span><code id="lab-sha">not built</code></div>
+      </div>
+      <div class="check-row" id="lab-export-checks"></div>
+      <pre id="lab-output" class="code-block" aria-label="Audited brief JSON">Press "Build audited brief" to stamp the canonical SHA-256 brief.</pre>
+    </div>
+    <div class="card">
+      <h3>In-page engine self-tests</h3>
+      <p class="card-sub">Deterministic checks over the loaded modules: spec byte derivations, the bookmark codec, adversarial fail-closed proofs, digest parity and XMSS one-time enforcement.</p>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="lab-selftests-run" type="button">Run self-tests</button>
+      </div>
+      <div class="check-row" id="lab-selftests"></div>
+      <div class="verdict" id="lab-selftests-verdict" role="status">Self-tests have not run yet.</div>
+    </div>
+  </section>
+
   <!-- ================= VECTORS ================= -->
   <section id="vectors" class="section">
     <div class="section-head">
@@ -463,6 +550,7 @@
 <script src="src/qday-aevum.js"></script>
 <script src="src/parammatrix.js"></script>
 <script src="src/domtable.js"></script>
+<script src="src/migration-lab.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

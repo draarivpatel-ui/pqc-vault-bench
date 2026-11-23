@@ -6,6 +6,7 @@
   const Q = window.QDayAevum;
   const MX = window.PQCParamMatrix;
   const DT = window.PQCDomTable;
+  const ML = window.PQCMigrationLab;
   const $ = id => document.getElementById(id);
   const NS = 'http://www.w3.org/2000/svg';
 
@@ -1109,18 +1110,473 @@
     });
   }
 
+  // ---- migration & audit workbench ---------------------------------------
+  let labSelected = null;
+  let labAdvResult = null;
+  let labBrief = null;
+  let labMatrix = null;
+
+  function labOverrides() {
+    const ov = {};
+    const u = $('lab-utxos').value, s = $('lab-settlements').value;
+    if (u !== '') ov.utxoCount = Number(u);
+    if (s !== '') ov.annualSettlements = Number(s);
+    return ov;
+  }
+
+  // A profile switch resets both volume inputs to that profile's declared
+  // defaults; any later edit is flagged as custom volumes by resolvedProfile.
+  function labVolumeDefaults() {
+    const base = ML.resolvedProfile($('lab-profile').value);
+    $('lab-utxos').value = String(base.utxoCount);
+    $('lab-settlements').value = String(base.annualSettlements);
+  }
+
+  function renderLabComparator() {
+    const prof = ML.resolvedProfile($('lab-profile').value, labOverrides());
+    labMatrix = ML.comparatorMatrix({ profile: $('lab-profile').value, overrides: labOverrides() });
+    dataTable('lab-table',
+      ['regime', 'pq component', 'nist', 'pk + payload B', 'wire B / yr', 'work idx', 'hndl', 'verdict'],
+      labMatrix.cells.map(c => [
+        c.regime, c.pqComponent || 'none', c.nistCategory === null ? 'none' : c.nistCategory,
+        c.bytes.perSettlement, c.bytes.annualWire, c.latencyIndex, c.hndl.class, c.verdict
+      ]));
+    $('lab-table').querySelectorAll('tbody tr').forEach((tr, i) => {
+      const cell = labMatrix.cells[i];
+      tr.tabIndex = 0;
+      tr.dataset.regime = cell.regime;
+      tr.setAttribute('role', 'button');
+      tr.setAttribute('aria-label', 'inspect ' + cell.regime);
+      tr.addEventListener('click', () => labSelectRegime(cell));
+      tr.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); labSelectRegime(cell); }
+      });
+      tr.classList.toggle('sel', tr.dataset.regime === labSelected);
+    });
+    chips('lab-checks', [
+      { t: prof.label + (prof.custom ? ' (custom volumes)' : ''), tone: prof.custom ? 'info' : 'ok' },
+      { t: 'latency base ' + labMatrix.latencyBase + ' wu (ML-KEM-512 keygen)', tone: 'info' },
+      { t: labMatrix.frontier.length + ' non-dominated regimes', tone: 'ok' },
+      { t: prof.custom ? 'volumes override in effect' : 'profile default volumes', tone: prof.custom ? 'info' : 'ok' }
+    ]);
+    if (labSelected) {
+      const c = labMatrix.cells.find(x => x.regime === labSelected);
+      if (c) labSelectRegime(c);
+    }
+  }
+
+  function labSelectRegime(cell) {
+    labSelected = cell.regime;
+    $('lab-table').querySelectorAll('tbody tr').forEach(tr => {
+      const on = tr.dataset.regime === cell.regime;
+      tr.classList.toggle('sel', on);
+      if (on) tr.setAttribute('aria-selected', 'true'); else tr.removeAttribute('aria-selected');
+    });
+    const prof = labMatrix ? labMatrix.profile : ML.resolvedProfile($('lab-profile').value, labOverrides());
+    const d = $('lab-detail');
+    d.innerHTML = '';
+    const rows = [
+      ['profile', prof.label + (prof.custom ? ' (custom volumes)' : '')],
+      ['pq component', cell.pqComponent || 'none (classical only)'],
+      ['security basis', cell.categoryReference],
+      ['byte method', cell.bytes.method],
+      ['key material', shortNum(cell.bytes.keyMaterial) + ' B across ' + shortNum(prof.utxoCount) + ' keys'],
+      ['annual wire', shortNum(cell.bytes.annualWire) + ' B across ' + shortNum(prof.annualSettlements) + ' settlements'],
+      ['work split', 'keygen ' + shortNum(cell.work.keygen) + ' / sign ' + shortNum(cell.work.primary) + ' / verify ' + shortNum(cell.work.secondary) + ' wu'],
+      ['hndl', cell.hndl.class + ': ' + cell.hndl.note],
+      ['budgets', shortNum(cell.budgets.byte) + ' B wire / work index ' + cell.budgets.latency],
+      ['verdict', cell.verdict]
+    ];
+    for (const [k, v] of rows) {
+      const div = document.createElement('div');
+      const ks = document.createElement('span');
+      const vs = document.createElement('b');
+      ks.textContent = k;
+      vs.textContent = v;
+      div.appendChild(ks);
+      div.appendChild(vs);
+      d.appendChild(div);
+    }
+  }
+
+  // Log-log scatter of all 18 FIPS sets plus the 5 regimes, with the
+  // non-dominated step frontier. y = log10(1 + work index) keeps the
+  // zero-work legacy anchor plottable.
+  function renderLabFrontier() {
+    const fp = ML.frontierPoints();
+    const W = 620, H = 320, padL = 52, padB = 36, padT = 12, padR = 14;
+    const pts = fp.fips.concat(fp.regimes);
+    const lx = v => Math.log10(v);
+    const ly = v => Math.log10(1 + v);
+    const xMin = Math.floor(Math.min.apply(null, pts.map(p => lx(p.x))) * 10) / 10;
+    const xMax = Math.ceil(Math.max.apply(null, pts.map(p => lx(p.x))) * 10) / 10;
+    const yMax = Math.ceil(Math.max.apply(null, pts.map(p => ly(p.y))) * 10) / 10;
+    const xS = v => padL + (lx(v) - xMin) / (xMax - xMin) * (W - padL - padR);
+    const yS = v => padT + (1 - ly(v) / yMax) * (H - padT - padB);
+    const s = svgRoot('lab-frontier', W, H, 'Pareto tradeoff frontier, bytes versus normalized work index on log scales');
+    el('line', { x1: padL, y1: H - padB, x2: W - padR, y2: H - padB, class: 'axis-line' }, s);
+    el('line', { x1: padL, y1: padT, x2: padL, y2: H - padB, class: 'axis-line' }, s);
+    for (let e = Math.ceil(xMin); e <= Math.floor(xMax); e++) {
+      const gx = padL + (e - xMin) / (xMax - xMin) * (W - padL - padR);
+      el('line', { x1: gx, y1: padT, x2: gx, y2: H - padB, class: 'grid-line' }, s);
+      txt(s, gx - 14, H - padB + 15, '10^' + e + ' B', 'axis-text');
+    }
+    for (let e = 0; e <= Math.floor(yMax); e++) {
+      const gy = padT + (1 - e / yMax) * (H - padT - padB);
+      el('line', { x1: padL, y1: gy, x2: W - padR, y2: gy, class: 'grid-line' }, s);
+      txt(s, 8, gy + 3, e === 0 ? '0' : shortNum(Math.pow(10, e) - 1), 'axis-text');
+    }
+    txt(s, padL, padT - 2, 'work index, log10(1 + index)', 'axis-text');
+    // Non-dominated step frontier across the regime points.
+    const fr = fp.frontier.map(f => ({ id: f.id, px: xS(f.x), py: yS(f.y) }));
+    if (fr.length) {
+      // Staircase: run horizontally at the previous point's work index,
+      // then drop vertically to the next frontier point.
+      let d = 'M ' + padL + ' ' + fr[0].py;
+      let prev = fr[0];
+      for (let i = 0; i < fr.length; i++) {
+        const f = fr[i];
+        d += ' L ' + f.px + ' ' + prev.py + ' L ' + f.px + ' ' + f.py;
+        prev = f;
+      }
+      d += ' L ' + (W - padR) + ' ' + prev.py;
+      el('path', { d, fill: 'none', class: 'lab-frontier-line' }, s);
+    }
+    const fipsColor = { 'FIPS 203': SERIES[0], 'FIPS 204': SERIES[1], 'FIPS 205': SERIES[2] };
+    const frontierIds = new Set(fp.frontier.map(f => f.id));
+    for (const p of fp.fips) {
+      const c = el('circle', {
+        cx: xS(p.x), cy: yS(p.y), r: 3.5,
+        fill: fipsColor[p.standard] || SERIES[0], 'fill-opacity': .75,
+        tabindex: '0', 'aria-label': p.id + ': ' + p.x + ' bytes, work index ' + Math.round(p.y * 100) / 100
+      }, s);
+      const ttl = document.createElementNS(NS, 'title');
+      ttl.textContent = p.id;
+      c.appendChild(ttl);
+      const html = '<b>' + esc(p.id) + '</b><br>' + shortNum(p.x) + ' B pk+payload<br>work index ' + Math.round(p.y * 100) / 100;
+      c.addEventListener('mousemove', e => showTip(e, html));
+      c.addEventListener('mouseleave', hideTip);
+      keyboardTip(c, html);
+    }
+    for (const p of fp.regimes) {
+      const onFrontier = frontierIds.has(p.id);
+      const c = el('circle', {
+        cx: xS(p.x), cy: yS(p.y), r: onFrontier ? 7 : 5.5,
+        fill: onFrontier ? 'var(--accent-3)' : 'var(--accent-strong)',
+        stroke: 'var(--bg)', 'stroke-width': 1.5,
+        tabindex: '0', role: 'button',
+        'aria-label': p.id + ': ' + p.x + ' bytes, work index ' + Math.round(p.y * 100) / 100 + ', activate to inspect'
+      }, s);
+      const ttl = document.createElementNS(NS, 'title');
+      ttl.textContent = p.id;
+      c.appendChild(ttl);
+      const html = '<b>' + esc(p.id) + '</b><br>' + shortNum(p.x) + ' B pk+payload<br>work index ' + Math.round(p.y * 100) / 100 + (onFrontier ? '<br>non-dominated' : '');
+      c.addEventListener('mousemove', e => showTip(e, html));
+      c.addEventListener('mouseleave', hideTip);
+      keyboardTip(c, html);
+      const pick = () => { if (labMatrix) { const cell = labMatrix.cells.find(x => x.regime === p.id); if (cell) labSelectRegime(cell); } };
+      c.addEventListener('click', pick);
+      c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+    }
+    legend('lab-frontier-legend', [
+      { label: 'FIPS 203 sets', color: SERIES[0] },
+      { label: 'FIPS 204 sets', color: SERIES[1] },
+      { label: 'FIPS 205 sets', color: SERIES[2] },
+      { label: 'migration regimes (frontier in orange)', color: 'var(--accent-strong)' }
+    ]);
+  }
+
+  function renderLabAdversarial() {
+    setVerdict('lab-adv-verdict', 'Replaying every tamper and forgery vector against the live engine...', null);
+    setTimeout(() => {
+      try {
+        const seed = $('lab-seed').value.trim() || 'migration-lab-brief';
+        labAdvResult = ML.adversarialMatrix({ seed: seed + ':adv' });
+        const s = labAdvResult.summary;
+        dataTable('lab-adv-table',
+          ['vector', 'family', 'mutation', 'expected', 'held', 'blocked by'],
+          labAdvResult.vectors.map(v => [
+            v.id, v.family, v.mutation, v.expected, v.held ? 'yes' : 'NO',
+            v.blockedBy.join(', ') || 'none'
+          ]));
+        chips('lab-adv-checks', [
+          { t: s.held + '/' + s.total + ' vectors held', tone: s.allHeld ? 'ok' : 'bad' },
+          { t: s.expectedRejections + ' expected rejections, ' + s.expectedAccepts + ' controls', tone: 'info' },
+          { t: 'fail-closed: ' + (s.allFailClosed ? 'yes' : 'NO'), tone: s.allFailClosed ? 'ok' : 'bad' }
+        ]);
+        setVerdict('lab-adv-verdict', s.allHeld
+          ? 'Every tamper and forgery vector failed closed under real engine operations: ' + s.held + ' of ' + s.total + ' held.'
+          : 'Leak detected: ' + (s.total - s.held) + ' of ' + s.total + ' vectors did not fail closed.', s.allHeld);
+        announce('Adversarial replay matrix complete: ' + s.held + ' of ' + s.total + ' vectors held.');
+      } catch (err) {
+        setVerdict('lab-adv-verdict', 'Adversarial matrix failed: ' + err.message, false);
+      }
+    }, 30);
+  }
+
+  function labBriefOptions() {
+    const ov = labOverrides();
+    return {
+      profile: $('lab-profile').value,
+      utxoCount: ov.utxoCount,
+      annualSettlements: ov.annualSettlements,
+      seed: $('lab-seed').value.trim() || 'migration-lab-brief'
+    };
+  }
+
+  function buildLabBrief() {
+    $('lab-output').textContent = 'Stamping the canonical SHA-256 audited brief...';
+    setTimeout(() => {
+      try {
+        labBrief = ML.auditedBrief(labBriefOptions());
+        $('lab-sha').textContent = labBrief.sha256;
+        $('lab-sha').parentElement.classList.add('match');
+        $('lab-output').textContent = labBrief.json;
+        const adv = labBrief.payload.adversarial;
+        const checks = Object.values(labBrief.payload.selfChecks).filter(v => v !== null);
+        chips('lab-export-checks', [
+          { t: 'sha-256 ' + labBrief.sha256.slice(0, 16) + '...', tone: 'ok' },
+          { t: 'adversarial ' + (adv ? adv.held + '/' + adv.total + ' held' : 'skipped'), tone: adv ? (adv.held === adv.total ? 'ok' : 'bad') : 'info' },
+          { t: 'self checks ' + checks.filter(Boolean).length + '/' + checks.length, tone: checks.every(Boolean) ? 'ok' : 'bad' },
+          { t: 'one cached object per state key', tone: 'info' }
+        ]);
+        announce('Audited brief ready. SHA-256 ' + labBrief.sha256.slice(0, 12) + '.');
+      } catch (err) {
+        $('lab-output').textContent = 'Brief failed: ' + err.message;
+        chips('lab-export-checks', [{ t: 'brief error', tone: 'bad' }]);
+      }
+    }, 30);
+  }
+
+  function labNeedBrief() {
+    if (labBrief) return false;
+    $('lab-output').textContent = 'Press "Build audited brief" first.';
+    return true;
+  }
+
+  function renderLabAll() {
+    if (!ML || !$('lab-table')) return;
+    renderLabComparator();
+    renderLabFrontier();
+  }
+
+  // ---- #pqc= bookmark hash codec ------------------------------------------
+  function collectControls() {
+    const controls = {};
+    for (const id of Object.keys(ML.CONTROL_SCHEMA)) {
+      const e = $(id);
+      if (!e) continue;
+      controls[id] = ML.CONTROL_SCHEMA[id].type === 'bool' ? e.checked : e.value;
+    }
+    return controls;
+  }
+
+  function applyControls(controls) {
+    const applied = [];
+    for (const id of Object.keys(controls)) {
+      const e = $(id), spec = ML.CONTROL_SCHEMA[id];
+      if (!e || !spec) continue;
+      if (spec.type === 'bool') {
+        e.checked = !!controls[id];
+      } else if (spec.type === 'select') {
+        if (Array.from(e.options).some(o => o.value === controls[id])) e.value = controls[id];
+        else continue;
+      } else {
+        e.value = String(controls[id]);
+      }
+      const out = $(id + '-out');
+      if (out) out.textContent = e.type === 'checkbox' ? '' : e.value;
+      applied.push(id);
+    }
+    return applied;
+  }
+
+  let hashTimer = null;
+  function updateHash() {
+    if (!ML) return;
+    clearTimeout(hashTimer);
+    hashTimer = setTimeout(() => {
+      try {
+        history.replaceState(null, '', location.pathname + location.search +
+          ML.encodeState({ controls: collectControls() }));
+      } catch (err) { /* DOM-sourced controls always sanitize cleanly */ }
+    }, 120);
+  }
+
+  // Applies a #pqc= bookmark to the DOM only (no renders); returns the ids
+  // restored, or null when the hash is absent or fails closed.
+  function applyHashState() {
+    if (!ML || typeof location.hash !== 'string' || location.hash.indexOf(ML.HASH_PREFIX) !== 0) return null;
+    const d = ML.decodeState(location.hash);
+    if (!d.ok) {
+      announce('Share link rejected: ' + d.errors[0]);
+      return null;
+    }
+    if (d.dropped.length) announce(d.dropped.length + ' unknown share-link controls were ignored.');
+    return applyControls(d.state.controls);
+  }
+
+  function renderAllPanels() {
+    heroSecurity();
+    heroTags();
+    renderNTT();
+    renderWOTS();
+    renderSecurity();
+    renderRisk();
+    renderKEM();
+    renderXMSS(true);
+    renderVerification();
+    renderMatrix();
+    renderLabAll();
+    renderQdayInitial();
+  }
+
+  function initLab() {
+    if (!ML || !$('lab-profile')) return;
+    $('lab-profile').addEventListener('change', () => {
+      labVolumeDefaults();
+      renderLabComparator();
+      labBrief = null;
+      $('lab-sha').textContent = 'not built';
+      $('lab-sha').parentElement.classList.remove('match');
+      announce('Treasury profile ' + ML.TREASURY_PROFILES[$('lab-profile').value].label + ' selected.');
+      updateHash();
+    });
+    ['lab-utxos', 'lab-settlements'].forEach(id => {
+      $(id).addEventListener('input', () => { renderLabComparator(); updateHash(); });
+      $(id).addEventListener('change', () => { sanitizeNumberField($(id), 1); renderLabComparator(); });
+    });
+    $('lab-seed').addEventListener('input', updateHash);
+    $('lab-adv-run').addEventListener('click', renderLabAdversarial);
+    $('lab-brief-build').addEventListener('click', buildLabBrief);
+    $('lab-json').addEventListener('click', () => {
+      if (labNeedBrief()) return;
+      downloadText('pqc-vault-bench-audit-brief.json', labBrief.json, 'application/json');
+      announce('Audited brief JSON downloaded.');
+    });
+    $('lab-csv').addEventListener('click', () => {
+      if (labNeedBrief()) return;
+      downloadText('pqc-vault-bench-audit-brief.csv', labBrief.csv, 'text/csv');
+      announce('Audited brief CSV downloaded.');
+    });
+    $('lab-md').addEventListener('click', () => {
+      if (labNeedBrief()) return;
+      downloadText('pqc-vault-bench-audit-brief.md', labBrief.markdown, 'text/markdown');
+      announce('Audited brief Markdown downloaded.');
+    });
+    $('lab-share').addEventListener('click', () => {
+      let hash;
+      try {
+        hash = ML.encodeState({ controls: collectControls() });
+      } catch (err) {
+        $('lab-output').textContent = 'Share link failed: ' + err.message;
+        return;
+      }
+      history.replaceState(null, '', location.pathname + location.search + hash);
+      const url = location.origin + location.pathname + location.search + hash;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(
+          () => {
+            chips('lab-export-checks', [{ t: 'share link copied (' + hash.length + ' chars)', tone: 'ok' }]);
+            announce('Share link copied to clipboard.');
+          },
+          () => { $('lab-output').textContent = url; }
+        );
+      } else {
+        $('lab-output').textContent = url;
+      }
+    });
+    $('lab-verify').addEventListener('click', () => {
+      if (!labBrief) {
+        chips('lab-export-checks', [{ t: 'build the brief first', tone: 'bad' }]);
+        return;
+      }
+      const v = ML.verifyBrief(labBrief);
+      const t = ML.tamperCheckBrief(labBrief);
+      chips('lab-export-checks', [
+        { t: 'digest ' + (v.ok ? 'verified' : 'MISMATCH'), tone: v.ok ? 'ok' : 'bad' },
+        { t: 'tamper check ' + (t.held ? 'caught ' + t.mutatedField : 'FAILED'), tone: t.held ? 'ok' : 'bad' }
+      ]);
+      announce(v.ok ? 'Digest verified; the tamper check caught a mutated figure.' : 'Digest mismatch detected.');
+    });
+    $('lab-selftests-run').addEventListener('click', () => {
+      setVerdict('lab-selftests-verdict', 'Running deterministic engine self-tests...', null);
+      setTimeout(() => {
+        try {
+          const results = ML.selfTests();
+          const pass = results.filter(t => t.pass).length;
+          chips('lab-selftests', results.map(t => ({
+            t: t.id + ': ' + (t.pass ? 'pass' : 'FAIL'),
+            tone: t.pass ? 'ok' : 'bad'
+          })));
+          setVerdict('lab-selftests-verdict', pass + '/' + results.length + ' engine self-tests passed in this tab.', pass === results.length);
+          announce('Self-tests finished: ' + pass + ' of ' + results.length + ' passed.');
+        } catch (err) {
+          setVerdict('lab-selftests-verdict', 'Self-test run failed: ' + err.message, false);
+        }
+      }, 30);
+    });
+    $('lab-shortcuts').addEventListener('change', () => {
+      announce($('lab-shortcuts').checked
+        ? 'Single-key shortcuts enabled: g cycles the profile, b builds the brief.'
+        : 'Single-key shortcuts disabled.');
+      updateHash();
+    });
+    renderLabAll();
+  }
+
+  // WCAG 2.1.4: single-key shortcuts exist only while this toggle is on,
+  // and they never fire while a form control has focus.
+  document.addEventListener('keydown', e => {
+    if (!ML || !$('lab-shortcuts') || !$('lab-shortcuts').checked) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    const tag = (t && t.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
+    if (e.key === 'g' && $('lab-profile')) {
+      const sel = $('lab-profile');
+      sel.selectedIndex = (sel.selectedIndex + 1) % sel.options.length;
+      sel.dispatchEvent(new Event('change'));
+      e.preventDefault();
+    } else if (e.key === 'b') {
+      buildLabBrief();
+      e.preventDefault();
+    }
+  });
+
+  // A hashchange only matters when it carries the #pqc= bookmark payload;
+  // section-anchor navigation falls through untouched.
+  window.addEventListener('hashchange', () => {
+    const applied = applyHashState();
+    if (!applied || !applied.length) return;
+    renderAllPanels();
+    announce('Share link applied: ' + applied.length + ' controls restored.');
+  });
+
+  // Every control named in the codec schema writes back to the URL hash on
+  // change, so the bookmark always mirrors the live workbench state.
+  if (ML) {
+    ['input', 'change'].forEach(evt => document.addEventListener(evt, e => {
+      if (e.target && e.target.id &&
+        Object.prototype.hasOwnProperty.call(ML.CONTROL_SCHEMA, e.target.id)) {
+        updateHash();
+      }
+    }));
+  }
+
   function renderAll() {
     // Cheap, judge-facing panels paint first; the expensive KEM/XMSS/sweep
     // work runs in staged slices so the page is interactive immediately.
     heroSecurity();
     heroTags();
     initHeroDemo();
+    applyHashState();
     renderNTT();
     renderWOTS();
     renderSecurity();
     setTimeout(() => { renderKEM(); renderXMSS(true); }, 40);
     setTimeout(() => { renderVerification(); renderMatrix(); }, 140);
-    setTimeout(() => { renderQdayInitial(); }, 260);
+    setTimeout(() => { renderQdayInitial(); initLab(); }, 260);
   }
   renderAll();
 })();

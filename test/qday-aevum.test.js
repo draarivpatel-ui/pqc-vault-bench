@@ -694,3 +694,124 @@ test('Q34: every verifier check is surfaced in the live QDay UI as a labeled chi
   }
   assert.ok(html.includes('id="qday-anchor-checks"'), 'check chips container exists');
 });
+
+// =========================================================================
+// Section: hostile-input probes (Q35-Q46)
+// =========================================================================
+
+test('Q35: createSettlementAnchor rejects hostile amount strings', () => {
+  for (const bad of ['abc', '=CMD()', '-1', '1e5', 'Infinity', 'NaN', '', '   ', '0.0000001', '1.2345678']) {
+    assert.throws(() => baseAnchor({ amountTusd8: bad }), undefined, String(bad));
+  }
+  for (const bad of [NaN, Infinity, -5, {}, []]) {
+    assert.throws(() => baseAnchor({ amountTusd8: bad }), undefined, String(bad));
+  }
+});
+
+test('Q36: createSettlementAnchor rejects hostile payer and merchant values', () => {
+  const good = { amountTusd8: '25', spendCapTusd8: '100' };
+  for (const bad of ['__proto__', '0x123', 'not-an-address', '0x' + 'ff'.repeat(41), 5, { toString: () => '0x' }]) {
+    assert.throws(() => Q.createSettlementAnchor(Object.assign({ payer: bad }, good)), TypeError, String(bad));
+    assert.throws(() => Q.createSettlementAnchor(Object.assign({ merchant: bad }, good)), TypeError, String(bad));
+  }
+  // Falsy values take the documented demo-address fallback instead.
+  const a = Q.createSettlementAnchor(Object.assign({ payer: '', merchant: null }, good));
+  assert.equal(a.payload.payer, Q.DEMO_ADDRESSES.payer.toLowerCase());
+  assert.equal(a.payload.merchant, Q.DEMO_ADDRESSES.merchant.toLowerCase());
+});
+
+test('Q37: createSettlementAnchor rejects hostile nonces', () => {
+  for (const bad of ['0x' + 'ab'.repeat(33), '0x' + 'ab'.repeat(7), '0xzz' + 'aa'.repeat(8), 'deadbeefdeadbeef', '', '0x']) {
+    assert.throws(() => baseAnchor({ nonce: bad }), TypeError, String(bad));
+  }
+  // 8 and 32 bytes are the inclusive bounds.
+  baseAnchor({ nonce: '0x' + 'ab'.repeat(8) });
+  baseAnchor({ nonce: '0x' + 'ab'.repeat(32) });
+});
+
+test('Q38: createSettlementAnchor rejects hostile deadlines', () => {
+  for (const bad of [NaN, Infinity, -Infinity, 0, -1, 1.5, 'x', {}, []]) {
+    assert.throws(() => baseAnchor({ deadlineUnix: bad }), undefined, String(bad));
+  }
+});
+
+test('Q39: the spend-cap gate is exact at the boundary', () => {
+  baseAnchor({ amountTusd8: '100', spendCapTusd8: '100' });
+  assert.throws(() => baseAnchor({ amountTusd8: '100.000001', spendCapTusd8: '100' }), RangeError);
+  assert.throws(() => baseAnchor({ amountTusd8: '0', spendCapTusd8: '100' }), RangeError);
+  assert.throws(() => baseAnchor({ amountTusd8: '0.000000', spendCapTusd8: '100' }), RangeError);
+});
+
+test('Q40: parseTokenUnits rejects hostile decimals and amounts', () => {
+  for (const dec of [-1, 37, 1.5, NaN, 'x']) {
+    assert.throws(() => Q.parseTokenUnits('1', dec), RangeError, String(dec));
+  }
+  for (const amt of ['1.2.3', '.5', '5.', '+1', ' 1 2', '0x10', '1e-3']) {
+    assert.throws(() => Q.parseTokenUnits(amt, 6), undefined, String(amt));
+  }
+  assert.equal(Q.parseTokenUnits('1.25', 6), 1250000n);
+  assert.throws(() => Q.parseTokenUnits('0.0000001', 6), RangeError);
+});
+
+test('Q41: encodeUint256 rejects hostile values', () => {
+  for (const bad of [-1, -0.5, NaN, Infinity, 1.5, 'abc', '0xzz', '-5', '', { valueOf: () => 5 }]) {
+    assert.throws(() => Q.encodeUint256(bad), undefined, String(bad));
+  }
+  const max = '0x' + 'ff'.repeat(32);
+  assert.equal(Q.encodeUint256(max).length, 64);
+  assert.throws(() => Q.encodeUint256('0x1' + '0'.repeat(64)), RangeError);
+});
+
+test('Q42: decodeTransferCalldata rejects every malformed shape', () => {
+  const a = baseAnchor();
+  const cd = a.payload.calldata.replace(/^0[xX]/, '');
+  for (const bad of [cd.slice(0, 100), cd + 'ff', '00' + cd, 'zz' + cd.slice(2),
+    'deadbeef' + cd.slice(8), cd.slice(0, 8) + 'ff' + cd.slice(9)]) {
+    if (bad.length === cd.length && bad.slice(0, 8) === cd.slice(0, 8)) continue; // in-length, in-selector cases covered below
+    assert.throws(() => Q.decodeTransferCalldata('0x' + bad), TypeError, bad.slice(0, 12));
+  }
+  assert.throws(() => Q.decodeTransferCalldata('0x' + '00'.repeat(68)), TypeError); // wrong selector
+  const badPad = '0x' + cd.slice(0, 8) + 'ff' + cd.slice(10);
+  assert.throws(() => Q.decodeTransferCalldata(badPad), TypeError); // non-zero address padding
+  assert.throws(() => Q.decodeTransferCalldata(5), TypeError);
+});
+
+test('Q43: verifySettlementAnchor fails closed on incomplete anchors', () => {
+  for (const bad of [null, undefined, 5, 'x', [], {}, { payload: {} }, { payload: {}, attestation: {}, signature: {} }]) {
+    const r = Q.verifySettlementAnchor(bad);
+    assert.equal(r.valid, false, String(bad));
+    assert.equal(typeof r.errors[0], 'string');
+  }
+});
+
+test('Q44: verifySettlementAnchor rejects hostile field types inside a full anchor', () => {
+  const a = baseAnchor();
+  const hostile = JSON.parse(JSON.stringify(a));
+  hostile.payload.payer = '__proto__';
+  hostile.payload.merchant = '0xZZZZ';
+  hostile.payload.amountRaw = 'not-a-bignum';
+  const r = Q.verifySettlementAnchor(hostile);
+  assert.equal(r.valid, false);
+  assert.equal(r.checks.addressesOk, false);
+  assert.ok(r.errors.length >= 2);
+});
+
+test('Q45: an anchor with a well-formed but foreign XMSS root still fails', () => {
+  const a = baseAnchor();
+  const hostile = JSON.parse(JSON.stringify(a));
+  hostile.payload.xmssRoot = '0x' + 'ab'.repeat(32);
+  const r = Q.verifySettlementAnchor(hostile);
+  assert.equal(r.valid, false);
+  assert.equal(r.checks.xmssRootOk, false);
+});
+
+test('Q46: address helpers reject hostile inputs and stay pure', () => {
+  assert.equal(Q.isValidAddress('__proto__'), false);
+  assert.equal(Q.isValidAddress('0x' + 'ab'.repeat(21)), false);
+  assert.equal(Q.isValidAddress(' 0x' + 'ab'.repeat(20) + ' '), true);
+  for (const bad of [null, 5, {}, '0x' + 'ab'.repeat(19)]) {
+    assert.throws(() => Q.normalizeAddress(bad), TypeError, String(bad));
+  }
+  const norm = Q.normalizeAddress('0x' + 'AB'.repeat(20).toLowerCase());
+  assert.equal(norm, '0x' + 'ab'.repeat(20));
+});

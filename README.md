@@ -19,6 +19,10 @@ Live demo: https://aariv.me/pqc-vault-bench/
 - **FIPS 203 / 204 / 205 parameter matrix** (`src/parammatrix.js`): all eighteen approved parameter sets side by side, including the twelve officially named FIPS 205 SHA2 and SHAKE variants. Byte sizes are recomputed from the packing formulas in each standard and cross checked against the published values. Every row reports its official NIST security category and reference primitive (AES / SHA-2 resource bounds, not bit guarantees); a bit estimate appears only where the workbench estimator names the attack model that produced it, and the method is exposed per row. A deterministic operation-cost model counts NTT transforms, ring products, XOF absorbs and hash invocations closed-form in the parameters, including the FIPS 204 signing-repetition estimate and the full FIPS 205 hypertree hash workload audited against Algorithms 5-20 (every PRF, F, H, `T_len`/`T_k` compression and `PRF_msg`/`H_msg` framing call, with only the WOTS+ signature chain length charged at the uniform-digit expectation). A normalized latency index compares every set against ML-KEM-512 key generation.
 - **One-click deterministic benchmark report** in JSON and CSV with explicit run parameters (seed, sweep count, cost-model version) and a SHA-256 fingerprint over the canonical payload, so the same inputs reproduce byte-identical exports. The CSV leads with a commented provenance block carrying the same seed, cost-model version, sweep count and the fingerprint labeled explicitly as the JSON payload SHA-256.
 - **Deterministic hex test-vector exporter** producing a reproducible JSON bundle with copy and download controls. A second export produces the full verification bundle with every self check, the KEM sweep, the reduction certificate and the resource tables.
+- **Quantum-migration and treasury policy comparator** (`src/migration-lab.js`): five deterministic migration regimes (`legacy-ecdsa`, `hybrid-ecdsa-mlkem768`, `hybrid-ecdsa-mldsa65`, `stateful-xmss-vault`, `stateless-slhdsa-128s`) evaluated against four treasury / UTXO profiles (`hot-treasury`, `high-freq-settlement`, `cold-reserve`, `qday-aevum-tusd8`) with editable volume controls. Every byte footprint, normalized work index, NIST category, and HNDL (harvest now, decrypt later) classification is recomputed live from `src/pqc.js` and `src/parammatrix.js`, and a Pareto frontier identifies the non-dominated regimes, plotted alongside all eighteen FIPS parameter sets on a log-log chart.
+- **Adversarial tamper and forgery replay matrix**: 32 vectors run real engine operations rather than mocked checks: ML-KEM ciphertext bit flips, truncation, extension, non-array inputs, zero ciphertexts and wrong-key decapsulation all take the FO implicit-rejection path; WOTS+ chain and checksum forgeries are rejected; XMSS foreign-tree signatures, cross-root replays and leaf exhaustion fail closed; and mutated QDay `tUSD8` settlement anchors (wrong chainId, expired deadline, swapped `txRequest`, replayed nonce, forged display amounts) are rejected by named verification checks.
+- **`#pqc=` bookmark hash codec** that serializes every workbench control into canonical JSON, UTF-8 and base64url, then restores the full state on reload. Decoding is fail-closed: hostile keys (`__proto__`, `constructor`, `prototype`), unknown controls and out-of-bounds values are dropped or clamped with a per-field report, and malformed payloads produce an error rather than partial state.
+- **Cached SHA-256 audited brief exporter**: a single canonical digest-stamped object per state key backs the on-page fingerprint, the JSON download, the formula-safe CSV provenance header and the Markdown footer, so every surface shows the identical SHA-256. A tamper-check mutates a figure and proves verification catches it. Fifteen deterministic in-page self-tests cover the codec, the adversarial matrix, digest parity, XMSS exhaustion, WOTS+ forgery rejection and the latency and work derivations.
 
 ## Quick start
 
@@ -39,10 +43,10 @@ npm test
 Which runs:
 
 ```
-node --test test/pqc.test.js test/analysis.test.js test/qday-aevum.test.js test/parammatrix.test.js test/compliance.test.js
+node --test test/pqc.test.js test/analysis.test.js test/qday-aevum.test.js test/parammatrix.test.js test/migration-lab.test.js test/compliance.test.js
 ```
 
-276 passing tests (100 core, 30 analysis, 34 QDay / Aevum integration, 97 parameter matrix and benchmark report, 15 compliance) cover NTT algebra, SHA-256, bit packing, error sampling, all four KEM parameter sets, WOTS+ and XMSS forgery resistance, security estimators, test-vector determinism, Montgomery and Barrett reduction, KEM correctness sweeps, exact byte accounting, the reproducible verification bundle, QDay / Aevum network constants, ERC-20 ABI encoding/decoding, PQC settlement anchor tamper detection, RPC parsing and offline simulation fallback, EIP-1193 wallet flows, and repository compliance rules (no dashes, no model attributions, no private details, doc consistency, no banned page furniture).
+457 passing tests (108 core, 35 analysis, 46 QDay / Aevum integration, 105 parameter matrix and benchmark report, 148 migration lab, 15 compliance) cover NTT algebra, SHA-256, bit packing, error sampling, all four KEM parameter sets, WOTS+ and XMSS forgery resistance, security estimators, test-vector determinism, Montgomery and Barrett reduction, KEM correctness sweeps, exact byte accounting, the reproducible verification bundle, QDay / Aevum network constants, ERC-20 ABI encoding/decoding, PQC settlement anchor tamper detection, RPC parsing and offline simulation fallback, EIP-1193 wallet flows, the migration comparator, the adversarial replay matrix, the bookmark codec, audited brief digest parity, and repository compliance rules (no dashes, no model attributions, no private details, doc consistency, no banned page furniture).
 
 The adversarial layer pins the failure modes a vault must survive: wrong-length or non-array ciphertexts take the FO implicit-rejection path; malformed WOTS+/XMSS signatures and Merkle proofs fail closed instead of throwing; settlement anchors carry a fresh nonce so identical inputs are not replayable; expired deadlines, wrong chainIds, swapped transaction requests, foreign-tree XMSS signatures, schema mismatches and forged display amounts are all rejected by named checks; and the wallet-facing send path consumes only the verified payload calldata and payer, so a mutated `txRequest` can never redirect funds.
 
@@ -51,10 +55,11 @@ Every anchor signs with a freshly generated XMSS tree whose seed is never the pu
 Individual suites:
 
 ```
-npm run test:core         # 100 tests
-npm run test:analysis     # 30 tests
-npm run test:qday         # 34 tests
-npm run test:matrix       # 92 tests
+npm run test:core         # 108 tests
+npm run test:analysis     # 35 tests
+npm run test:qday         # 46 tests
+npm run test:matrix       # 105 tests
+npm run test:lab          # 148 tests
 npm run test:compliance   # 15 tests
 ```
 
@@ -65,7 +70,9 @@ const pqc = require('./src/pqc.js');               // Node
 const analysis = require('./src/analysis.js');     // Node
 const qday = require('./src/qday-aevum.js');       // Node
 const matrix = require('./src/parammatrix.js');    // Node
-// or in the browser: window.PQC, window.PQCAnalysis, window.QDayAevum, window.PQCParamMatrix
+const lab = require('./src/migration-lab.js');     // Node
+// or in the browser: window.PQC, window.PQCAnalysis, window.QDayAevum,
+// window.PQCParamMatrix, window.PQCMigrationLab
 ```
 
 Selected core functions: `ntt`, `inverseNTT`, `baseCaseMultiply`, `polyMul`, `schoolbookMul`, `sha256`, `xof`, `MLKEM`, `cbdSample`, `wotsGenerate`, `wotsSign`, `wotsVerify`, `XMSS`, `merkleRoot`, `groverIterations`, `shorQubits`, `securityReport`, `hybridSecurity`, `migrationRisk`, `exportTestVectors`.

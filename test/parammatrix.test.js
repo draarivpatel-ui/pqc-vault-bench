@@ -877,3 +877,86 @@ test('D4: the page wires the matrix table through the caption-preserving rendere
   assert.match(html, /<table id="mx-table" class="data-table"><caption class="sr-only">/);
   assert.ok(html.indexOf('src/domtable.js') < html.indexOf('app.js') && html.indexOf('src/domtable.js') > html.indexOf('src/parammatrix.js'));
 });
+
+// ---------------------------------------------------------------
+// Section F: hostile-input probes
+// ---------------------------------------------------------------
+test('F1: spec-bytes functions reject hostile parameter names', () => {
+  for (const bad of ['__proto__', 'constructor', 'prototype', 'ML-KEM-999', '', 5, NaN, {}, []]) {
+    assert.throws(() => M.mlKemSpecBytes(bad), RangeError, String(bad));
+    assert.throws(() => M.mlDsaSpecBytes(bad), RangeError, String(bad));
+    assert.throws(() => M.slhDsaSpecBytes(bad), RangeError, String(bad));
+  }
+});
+
+test('F2: work-profile functions reject hostile parameter names', () => {
+  for (const bad of ['__proto__', 'constructor', 'ML-KEM-256', 'SLH-DSA-SHA2-999s', 0, {}, null]) {
+    if (bad === null) { assert.throws(() => M.mlKemWorkProfile(bad), RangeError); continue; }
+    assert.throws(() => M.mlKemWorkProfile(bad), RangeError, String(bad));
+    assert.throws(() => M.mlDsaWorkProfile(bad), RangeError, String(bad));
+    assert.throws(() => M.slhDsaWorkProfile(bad), RangeError, String(bad));
+  }
+});
+
+test('F3: securityEstimate rejects hostile NIST categories', () => {
+  for (const bad of [0, 6, -1, 1.5, NaN, 'x', '3x', {}, []]) {
+    assert.throws(() => M.securityEstimate('ML-KEM-512', bad), RangeError, String(bad));
+  }
+});
+
+test('F4: workUnits is fail-closed arithmetic on real profiles and throws on null', () => {
+  assert.equal(M.workUnits({}), 0);
+  assert.throws(() => M.workUnits(null), TypeError);
+  assert.throws(() => M.workUnits(undefined), TypeError);
+  // A primitive has no fields, so every term lands on the || 0 fallback.
+  assert.equal(M.workUnits(5), 0);
+  const p = M.mlKemWorkProfile('ML-KEM-512');
+  assert.ok(Number.isFinite(M.workUnits(p.keygen)) && M.workUnits(p.keygen) > 0);
+});
+
+test('F5: benchmarkReport survives hostile option values', () => {
+  const a = M.benchmarkReport({ sweeps: false, seed: 42 });
+  assert.equal(a.runParameters.seed, 'pqc-vault-bench-report');
+  assert.equal(a.runParameters.sweepCount, 0);
+  const b = M.benchmarkReport({ sweeps: true, sweepCount: NaN, seed: 'x' });
+  assert.equal(b.runParameters.sweepCount, 8);
+  const c = M.benchmarkReport({ sweeps: true, sweepCount: 1e9, seed: 'x' });
+  assert.equal(c.runParameters.sweepCount, 48);
+  const d = M.benchmarkReport({ sweeps: true, sweepCount: -5, seed: 'x' });
+  assert.equal(d.runParameters.sweepCount, 4);
+});
+
+test('F6: reportCsv stays formula-safe and line-injection-safe with a hostile seed', () => {
+  const r = M.benchmarkReport({ sweeps: false, seed: '=CMD()\n@evil' });
+  const csv = M.reportCsv(r);
+  for (const line of csv.split('\n')) {
+    if (!line) continue;
+    assert.equal(/^\s*[=+\-@\t]/.test(line), false, line.slice(0, 40));
+    if (line[0] === '#') {
+      assert.equal(/[\r\n\t]/.test(line), false, 'provenance line must stay single-line');
+    }
+  }
+  // The hostile seed can only live inside a '#' comment, never as a data row.
+  const seedLine = csv.split('\n').find(l => l.indexOf('report seed') !== -1);
+  assert.ok(seedLine.startsWith('# '));
+});
+
+test('F7: csvEscape quotes every spreadsheet formula trigger', () => {
+  assert.equal(M.csvEscape('=1+2'), "'=1+2");
+  assert.equal(M.csvEscape('+SUM(A1)'), "'+SUM(A1)");
+  assert.equal(M.csvEscape('-5'), "'-5");
+  assert.equal(M.csvEscape('@x'), "'@x");
+  assert.equal(M.csvEscape('\t9'), "'\t9");
+  assert.equal(M.csvEscape('a,b'), '"a,b"');
+  assert.equal(M.csvEscape('say "hi"'), '"say ""hi"""');
+  assert.equal(M.csvEscape(null), '');
+  assert.equal(M.csvEscape('line\nbreak'), '"line\nbreak"');
+});
+
+test('F8: fipsParameterMatrix is frozen-shaped, complete and deterministic', () => {
+  const m1 = M.fipsParameterMatrix();
+  const m2 = M.fipsParameterMatrix();
+  assert.deepEqual(m1, m2);
+  assert.equal(m1.length, 18);
+  assert.ok(m1.every(r => r.publishedBytesMatch));
+});

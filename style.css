@@ -276,3 +276,15 @@ svg [tabindex]:focus { stroke: var(--accent); stroke-width: 1.5; }
 @media (max-width: 560px) {
   .mx-bar { flex-direction: column; align-items: stretch; }
 }
+
+/* Migration and audit workbench */
+.lab-bar { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin-bottom: 20px; }
+.lab-bar .switch { margin: 0; align-self: center; }
+.lab-frontier-line { stroke: var(--accent-3); stroke-width: 1.6; stroke-dasharray: 5 3; opacity: .9; }
+#lab-table tbody tr { cursor: pointer; }
+#lab-table tbody tr.sel { background: color-mix(in srgb, var(--accent) 14%, var(--surface-1)); }
+#lab-table tbody tr.sel td:first-child { color: var(--accent); font-weight: 650; }
+#lab-table tbody tr:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: -2px; }
+@media (max-width: 560px) {
+  .lab-bar { flex-direction: column; align-items: stretch; }
+}

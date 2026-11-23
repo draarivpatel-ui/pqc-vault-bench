@@ -4,11 +4,12 @@
   "description": "Zero-dependency post-quantum cryptography and UTXO quantum-migration workbench",
   "private": true,
   "scripts": {
-    "test": "node --test test/pqc.test.js test/analysis.test.js test/qday-aevum.test.js test/parammatrix.test.js test/compliance.test.js",
+    "test": "node --test test/pqc.test.js test/analysis.test.js test/qday-aevum.test.js test/parammatrix.test.js test/migration-lab.test.js test/compliance.test.js",
     "test:core": "node --test test/pqc.test.js",
     "test:analysis": "node --test test/analysis.test.js",
     "test:qday": "node --test test/qday-aevum.test.js",
     "test:matrix": "node --test test/parammatrix.test.js",
+    "test:lab": "node --test test/migration-lab.test.js",
     "test:compliance": "node --test test/compliance.test.js"
   },
   "license": "MIT"
