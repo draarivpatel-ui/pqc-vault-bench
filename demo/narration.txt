@@ -1,0 +1,23 @@
+P Q C Vault Bench is a zero dependency workbench for post quantum cryptography, U T X O quantum migration and the Q Day Aevum testnet.
+Everything runs in the page with plain JavaScript: no build step, no packages, and no background network calls.
+
+The hero runs one click defend, attack and replay demos computed from the real engine.
+Every figure on screen is a live computation, not a mock.
+
+The number theoretic transform multiplies polynomials in the Kyber ring through seven Cooley Tukey stages, and its zeta table matches the FIPS 203 Montgomery roots.
+M L K E M key encapsulation runs educational parameter sets carrying the real FIPS 203 names, with centered binomial sampling, compression and Fujisaki Okamoto implicit rejection.
+Correctness sweeps report the exact decryption failure, tamper rejection and wrong key counts for every parameter set.
+
+W O T S plus signs a message over sixty seven hash chains, and its checksum blocks forgery.
+X M S S stacks those one time keys into a Merkle tree with authentication paths, leaf exhaustion and verification.
+
+A Shor and Grover analyzer scores the quantum exposure of secp256k1, R S A 2048 and the NIST schemes, while a U T X O meter prices harvest now decrypt later risk.
+The FIPS matrix lays all eighteen approved parameter sets side by side with recomputed byte sizes, security categories and a closed form operation cost model.
+
+The Q Day Aevum panel binds risk attestations and X M S S signatures to t U S D 8 settlement calldata on chain 44005.
+A seventeen check verifier proves every binding: wrong chains, expired deadlines, replayed nonces and foreign tree signatures all fail closed.
+The migration workbench compares five regimes across four treasury profiles on a Pareto frontier with all eighteen parameter sets.
+
+The audited brief stamps one S H A 256 digest across the page, J S O N, C S V and Markdown, checked by fifteen in page self tests.
+Four hundred fifty seven Node tests pass with zero failures, re verified inside this recording run.
+P Q C Vault Bench. Educational primitives, honest estimates, and no custody of real funds.

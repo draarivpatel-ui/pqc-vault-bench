@@ -1,0 +1,67 @@
+1
+00:00:00,520 --> 00:00:09,848
+P Q C Vault Bench is a zero dependency workbench for post quantum cryptography, U T X O quantum migration and the Q Day Aevum testnet.
+
+2
+00:00:10,018 --> 00:00:17,903
+Everything runs in the page with plain JavaScript: no build step, no packages, and no background network calls.
+
+3
+00:00:18,523 --> 00:00:24,647
+The hero runs one click defend, attack and replay demos computed from the real engine.
+
+4
+00:00:24,817 --> 00:00:28,821
+Every figure on screen is a live computation, not a mock.
+
+5
+00:00:29,441 --> 00:00:41,887
+The number theoretic transform multiplies polynomials in the Kyber ring through seven Cooley Tukey stages, and its zeta table matches the FIPS 203 Montgomery roots.
+
+6
+00:00:42,057 --> 00:00:55,545
+M L K E M key encapsulation runs educational parameter sets carrying the real FIPS 203 names, with centered binomial sampling, compression and Fujisaki Okamoto implicit rejection.
+
+7
+00:00:55,715 --> 00:01:04,321
+Correctness sweeps report the exact decryption failure, tamper rejection and wrong key counts for every parameter set.
+
+8
+00:01:04,941 --> 00:01:11,270
+W O T S plus signs a message over sixty seven hash chains, and its checksum blocks forgery.
+
+9
+00:01:11,441 --> 00:01:19,526
+X M S S stacks those one time keys into a Merkle tree with authentication paths, leaf exhaustion and verification.
+
+10
+00:01:20,146 --> 00:01:32,952
+A Shor and Grover analyzer scores the quantum exposure of secp256k1, R S A 2048 and the NIST schemes, while a U T X O meter prices harvest now decrypt later risk.
+
+11
+00:01:33,122 --> 00:01:44,447
+The FIPS matrix lays all eighteen approved parameter sets side by side with recomputed byte sizes, security categories and a closed form operation cost model.
+
+12
+00:01:45,067 --> 00:01:54,310
+The Q Day Aevum panel binds risk attestations and X M S S signatures to t U S D 8 settlement calldata on chain 44005.
+
+13
+00:01:54,480 --> 00:02:04,765
+A seventeen check verifier proves every binding: wrong chains, expired deadlines, replayed nonces and foreign tree signatures all fail closed.
+
+14
+00:02:04,935 --> 00:02:14,420
+The migration workbench compares five regimes across four treasury profiles on a Pareto frontier with all eighteen parameter sets.
+
+15
+00:02:15,039 --> 00:02:24,366
+The audited brief stamps one S H A 256 digest across the page, J S O N, C S V and Markdown, checked by fifteen in page self tests.
+
+16
+00:02:24,536 --> 00:02:31,665
+Four hundred fifty seven Node tests pass with zero failures, re verified inside this recording run.
+
+17
+00:02:31,835 --> 00:02:38,205
+P Q C Vault Bench. Educational primitives, honest estimates, and no custody of real funds.

@@ -10,7 +10,11 @@
     "test:qday": "node --test test/qday-aevum.test.js",
     "test:matrix": "node --test test/parammatrix.test.js",
     "test:lab": "node --test test/migration-lab.test.js",
-    "test:compliance": "node --test test/compliance.test.js"
+    "test:compliance": "node --test test/compliance.test.js",
+    "start": "node scripts/serve.mjs",
+    "demo:synth": "node scripts/record-demo.mjs synth",
+    "demo:capture": "node scripts/record-demo.mjs capture",
+    "demo:check": "node scripts/record-demo.mjs check"
   },
   "license": "MIT"
 }

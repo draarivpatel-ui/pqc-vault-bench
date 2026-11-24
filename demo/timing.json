@@ -1,0 +1,133 @@
+{
+ "voice": "OmniVoice-bf16 (Aariv voice clone)",
+ "seed": 1,
+ "sr": 24000,
+ "lead": 0.6,
+ "gap_sent": 0.3,
+ "gap_para": 0.75,
+ "tail": 1,
+ "total": 159.155,
+ "wav_seconds": 159.155,
+ "words": 358,
+ "sentences": [
+  {
+   "para": 0,
+   "sent": 0,
+   "text": "P Q C Vault Bench is a zero dependency workbench for post quantum cryptography, U T X O quantum migration and the Q Day Aevum testnet.",
+   "dur": 9.198,
+   "start": 0.6
+  },
+  {
+   "para": 0,
+   "sent": 1,
+   "text": "Everything runs in the page with plain JavaScript: no build step, no packages, and no background network calls.",
+   "dur": 7.755,
+   "start": 10.098
+  },
+  {
+   "para": 1,
+   "sent": 0,
+   "text": "The hero runs one click defend, attack and replay demos computed from the real engine.",
+   "dur": 5.994,
+   "start": 18.603
+  },
+  {
+   "para": 1,
+   "sent": 1,
+   "text": "Every figure on screen is a live computation, not a mock.",
+   "dur": 3.874,
+   "start": 24.897
+  },
+  {
+   "para": 2,
+   "sent": 0,
+   "text": "The number theoretic transform multiplies polynomials in the Kyber ring through seven Cooley Tukey stages, and its zeta table matches the FIPS 203 Montgomery roots.",
+   "dur": 12.316,
+   "start": 29.521
+  },
+  {
+   "para": 2,
+   "sent": 1,
+   "text": "M L K E M key encapsulation runs educational parameter sets carrying the real FIPS 203 names, with centered binomial sampling, compression and Fujisaki Okamoto implicit rejection.",
+   "dur": 13.358,
+   "start": 42.137
+  },
+  {
+   "para": 2,
+   "sent": 2,
+   "text": "Correctness sweeps report the exact decryption failure, tamper rejection and wrong key counts for every parameter set.",
+   "dur": 8.476,
+   "start": 55.795
+  },
+  {
+   "para": 3,
+   "sent": 0,
+   "text": "W O T S plus signs a message over sixty seven hash chains, and its checksum blocks forgery.",
+   "dur": 6.199,
+   "start": 65.021
+  },
+  {
+   "para": 3,
+   "sent": 1,
+   "text": "X M S S stacks those one time keys into a Merkle tree with authentication paths, leaf exhaustion and verification.",
+   "dur": 7.955,
+   "start": 71.521
+  },
+  {
+   "para": 4,
+   "sent": 0,
+   "text": "A Shor and Grover analyzer scores the quantum exposure of secp256k1, R S A 2048 and the NIST schemes, while a U T X O meter prices harvest now decrypt later risk.",
+   "dur": 12.676,
+   "start": 80.226
+  },
+  {
+   "para": 4,
+   "sent": 1,
+   "text": "The FIPS matrix lays all eighteen approved parameter sets side by side with recomputed byte sizes, security categories and a closed form operation cost model.",
+   "dur": 11.195,
+   "start": 93.202
+  },
+  {
+   "para": 5,
+   "sent": 0,
+   "text": "The Q Day Aevum panel binds risk attestations and X M S S signatures to t U S D 8 settlement calldata on chain 44005.",
+   "dur": 9.113,
+   "start": 105.147
+  },
+  {
+   "para": 5,
+   "sent": 1,
+   "text": "A seventeen check verifier proves every binding: wrong chains, expired deadlines, replayed nonces and foreign tree signatures all fail closed.",
+   "dur": 10.155,
+   "start": 114.56
+  },
+  {
+   "para": 5,
+   "sent": 2,
+   "text": "The migration workbench compares five regimes across four treasury profiles on a Pareto frontier with all eighteen parameter sets.",
+   "dur": 9.355,
+   "start": 125.015
+  },
+  {
+   "para": 6,
+   "sent": 0,
+   "text": "The audited brief stamps one S H A 256 digest across the page, J S O N, C S V and Markdown, checked by fifteen in page self tests.",
+   "dur": 9.197,
+   "start": 135.119
+  },
+  {
+   "para": 6,
+   "sent": 1,
+   "text": "Four hundred fifty seven Node tests pass with zero failures, re verified inside this recording run.",
+   "dur": 6.999,
+   "start": 144.616
+  },
+  {
+   "para": 6,
+   "sent": 2,
+   "text": "P Q C Vault Bench. Educational primitives, honest estimates, and no custody of real funds.",
+   "dur": 6.24,
+   "start": 151.915
+  }
+ ]
+}
