@@ -337,7 +337,7 @@
     nodes.forEach((n, i) => {
       if (i) { const a = document.createElement('span'); a.className = 'flow-arrow'; a.textContent = '->'; flow.appendChild(a); }
       const d = document.createElement('div'); d.className = 'flow-node';
-      d.innerHTML = '<b>' + n.b + '</b><small>' + n.s + '</small>';
+      d.innerHTML = '<b>' + esc(n.b) + '</b><small>' + esc(n.s) + '</small>';
       flow.appendChild(d);
     });
     const hist = kem.errorHistogram(seed, kem.params.eta1);
