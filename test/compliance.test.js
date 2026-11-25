@@ -168,3 +168,24 @@ test('COMPLIANCE 15: the favicon is a local asset, not a remote request', () => 
   assert.equal(/^(https?|data):/.test(m[1]), false);
   assert.ok(fs.existsSync(path.join(root, m[1])), m[1] + ' must exist');
 });
+
+test('COMPLIANCE 16: print output has a deliberate light layout', () => {
+  const css = read('style.css');
+  assert.match(css, /@media print/);
+  assert.match(css, /@page \{ size: letter portrait/);
+  assert.match(css, /--surface-1: #ffffff/);
+  assert.match(css, /\.site-head,\s*\.hero-actions/);
+  assert.match(css, /\.table-wrap \{ overflow: visible; \}/);
+});
+
+test('COMPLIANCE 17: reduced motion removes the two animated state cues', () => {
+  const css = read('style.css');
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(css, /\.risk-fill,\s*\.skip-link \{ transition: none !important; \}/);
+});
+
+test('COMPLIANCE 18: desktop section links meet the minimum target height', () => {
+  const css = read('style.css');
+  assert.match(css, /\.head-nav a \{[^}]*min-height: 34px/);
+  assert.match(css, /\.head-nav a \{[^}]*display: inline-flex/);
+});
