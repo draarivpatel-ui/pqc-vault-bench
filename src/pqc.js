@@ -909,8 +909,14 @@
     // Score the exposure of a UTXO whose public key is already on chain.
     const exposed = !!utxo.publicKeyRevealed;
     const p2pkh = !!utxo.p2pkh;
-    const value = Number(utxo.valueBtc) || 0;
-    const ageBlocks = Number(utxo.ageBlocks) || 0;
+    // Echo only finite, non-negative magnitudes back to callers. `|| 0`
+    // alone let Infinity and negative values through into the returned
+    // valueBtc/ageBlocks fields (and from there into attestation JSON), even
+    // though the score itself stayed bounded.
+    const valueRaw = Number(utxo.valueBtc);
+    const ageRaw = Number(utxo.ageBlocks);
+    const value = Number.isFinite(valueRaw) && valueRaw > 0 ? valueRaw : 0;
+    const ageBlocks = Number.isFinite(ageRaw) && ageRaw > 0 ? ageRaw : 0;
     let score = 0;
     if (exposed) score += 60;
     // P2PKH hides the public key behind a hash until the first spend, so its

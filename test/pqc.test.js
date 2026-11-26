@@ -736,10 +736,18 @@ test('99: migrationRisk clamps hostile numeric fields instead of scoring NaN', (
   for (const utxo of [
     { publicKeyRevealed: true, valueBtc: NaN, ageBlocks: Infinity },
     { publicKeyRevealed: true, valueBtc: 'x', ageBlocks: -5 },
-    { publicKeyRevealed: false, p2pkh: true, valueBtc: -0, ageBlocks: {} }
+    { publicKeyRevealed: false, p2pkh: true, valueBtc: -0, ageBlocks: {} },
+    { publicKeyRevealed: true, valueBtc: Infinity, ageBlocks: -Infinity },
+    { publicKeyRevealed: true, valueBtc: 1e308, ageBlocks: 1e308 },
+    { publicKeyRevealed: true, valueBtc: -5, ageBlocks: undefined }
   ]) {
     const r = pqc.migrationRisk(utxo);
     assert.ok(Number.isFinite(r.score) && r.score >= 0 && r.score <= 100, JSON.stringify(utxo));
     assert.equal(typeof r.tier, 'string');
+    // The echoed magnitudes are inputs for attestation JSON, so they must be
+    // finite and non-negative too, not just the derived score.
+    assert.ok(Number.isFinite(r.valueBtc) && r.valueBtc >= 0, 'valueBtc ' + String(utxo.valueBtc));
+    assert.ok(Number.isFinite(r.ageBlocks) && r.ageBlocks >= 0, 'ageBlocks ' + String(utxo.ageBlocks));
+    assert.doesNotThrow(() => JSON.parse(JSON.stringify(r)), 'risk payload must survive JSON round trip');
   }
 });
