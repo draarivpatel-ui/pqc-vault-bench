@@ -60,7 +60,7 @@ npm run test:analysis     # 35 tests
 npm run test:qday         # 46 tests
 npm run test:matrix       # 105 tests
 npm run test:lab          # 148 tests
-npm run test:compliance   # 15 tests
+npm run test:compliance   # 18 tests
 ```
 
 ## Library API
