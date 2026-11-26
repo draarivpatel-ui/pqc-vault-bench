@@ -59,7 +59,7 @@ A third layer puts all three NIST standards side by side: all eighteen approved 
 
 A fourth layer turns the data into a migration decision. Five deterministic migration regimes, from legacy ECDSA through hybrid ML-KEM and ML-DSA handshakes to stateful XMSS vaults and stateless SLH-DSA, are scored against four treasury and UTXO profiles with editable volume controls: byte footprints, normalized work indexes, NIST categories and HNDL exposure are all recomputed from the engines, and a Pareto frontier marks the non-dominated options. An adversarial replay matrix runs 32 real tamper and forgery vectors against the live code and reports which named check blocked each one. A `#pqc=` bookmark hash restores the whole workbench state fail-closed, and a cached SHA-256 audited brief prints the identical digest in the page, the JSON export, the CSV provenance header and the Markdown footer, with a tamper check that proves the digest is real.
 
-Zero dependencies, zero build step. 460 passing tests across six suites, including adversarial regression tests that prove a swapped transaction request, a replayed anchor, an expired deadline or a foreign-tree XMSS signature all fail closed, plus a compliance suite that locks the no-dash and no-attribution rules. Everything runs locally in the browser with optional user-triggered read-only QDay Aevum testnet RPC queries and EIP-1193 wallet integration, and the whole project stays explicitly educational: this is a tool for reasoning about post-quantum migration and testnet settlement workflows, not a library for protecting real funds.
+Zero dependencies, zero build step. 463 passing tests across six suites, including adversarial regression tests that prove a swapped transaction request, a replayed anchor, an expired deadline or a foreign-tree XMSS signature all fail closed, plus a compliance suite that locks the no-dash and no-attribution rules. Everything runs locally in the browser with optional user-triggered read-only QDay Aevum testnet RPC queries and EIP-1193 wallet integration, and the whole project stays explicitly educational: this is a tool for reasoning about post-quantum migration and testnet settlement workflows, not a library for protecting real funds.
 
 ## Devpost bullets
 
@@ -70,7 +70,7 @@ Zero dependencies, zero build step. 460 passing tests across six suites, includi
 - Full FIPS 203 / 204 / 205 parameter matrix: all eighteen approved sets with spec-derived byte accounting, official NIST categories and reference primitives, named bit estimates only where a model produces them, a deterministic operation-cost model, and one-click fingerprinted JSON and provenance-block CSV benchmark reports.
 - Migration and audit workbench: a five-regime x four-profile comparator with engine-derived bytes, work, NIST categories and HNDL classes, a Pareto frontier, a 32-vector adversarial replay matrix, a fail-closed `#pqc=` bookmark codec, and a cached SHA-256 audited brief whose digest is identical in the page, JSON, CSV and Markdown.
 - Accessible and keyboard navigable: skip link, focusable chart marks, aria-live result announcements, caption-preserving table rendering, an opt-in single-key shortcut toggle, and self-healing invalid input.
-- Honest and reproducible: 460 passing tests, 0 violations on the local honesty harness, zero dependencies, and a plainly stated educational scope boundary.
+- Honest and reproducible: 463 passing tests, 0 violations on the local honesty harness, zero dependencies, and a plainly stated educational scope boundary.
 
 ## Submission checklist
 

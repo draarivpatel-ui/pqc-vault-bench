@@ -186,6 +186,35 @@ test('COMPLIANCE 17: reduced motion removes the two animated state cues', () => 
 
 test('COMPLIANCE 18: desktop section links meet the minimum target height', () => {
   const css = read('style.css');
-  assert.match(css, /\.head-nav a \{[^}]*min-height: 34px/);
+  assert.match(css, /\.head-nav a \{[^}]*min-height: 44px/);
+  assert.match(css, /\.qday-links a \{[^}]*min-width: 44px/);
+  assert.match(css, /#lab-table tbody th, #lab-table tbody td \{ padding-block: 14px; \}/);
+  assert.match(css, /\.table-wrap \{ max-width: 100%; \}/);
+  assert.match(css, /#lab-frontier svg \{ min-width: 620px; \}/);
   assert.match(css, /\.head-nav a \{[^}]*display: inline-flex/);
+});
+
+
+test('COMPLIANCE 19: print output hides every form control instead of printing widgets', () => {
+  const css = read('style.css');
+  assert.match(css, /@media print[\s\S]*input,[\s\S]*select,[\s\S]*textarea \{ display: none !important; \}/);
+  assert.doesNotMatch(css, /@media print[\s\S]*display: inline-block !important/);
+});
+
+test('COMPLIANCE 20: explicit controls meet the 44px target floor', () => {
+  const css = read('style.css');
+  assert.match(css, /button,[\s\S]*min-width: 44px/);
+  assert.match(css, /button,[\s\S]*min-height: 44px/);
+  assert.match(css, /\.head-nav a \{[^}]*min-width: 44px/);
+  assert.match(css, /\.head-nav a \{[^}]*min-height: 44px/);
+});
+
+test('COMPLIANCE 21: keyboard focus and highlighted tree text stay visible', () => {
+  const css = read('style.css');
+  assert.match(css, /svg \[tabindex\]:focus-visible \{ outline: 2px solid var\(--accent\)/);
+  assert.match(css, /\.tree-node\.path \{[^}]*color: var\(--text-primary\)/);
+  assert.match(css, /\.tree-node\.root \{[^}]*color: var\(--text-primary\)/);
+  assert.match(read('app.js'), /height: rowH, fill: 'transparent'/);
+  assert.match(read('app.js'), /r: 23, fill: 'transparent'/);
+  assert.match(css, /input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\), select, textarea \{ border-color: var\(--muted\); \}/);
 });

@@ -134,7 +134,7 @@
           fill: se.color
         }, s);
         // hit target larger than the mark
-        const hit = el('rect', { x: padL, y: y - 3, width: plotW, height: barH + 6, fill: 'transparent' }, s);
+        const hit = el('rect', { x: padL, y: y0, width: plotW, height: rowH, fill: 'transparent' }, s);
         hit.style.cursor = 'crosshair';
         const tipHtml = '<b>' + r.label + '</b><br>' + se.label + ': ' + fmt(v, opts);
         hit.addEventListener('mousemove', e => showTip(e, tipHtml));
@@ -175,13 +175,17 @@
       const x = padL + i * step + (step - bw) / 2;
       const y = padT + ((maxV - v) / range) * plotH;
       const hh = Math.abs(zeroY - y);
+      const hitW = Math.max(46, step);
+      const hitX = padL + i * step + (step - hitW) / 2;
+      const hit = el('rect', { x: hitX, y: padT, width: hitW, height: plotH, fill: 'transparent' }, s);
       const rect = el('rect', { x, y: Math.min(y, zeroY), width: bw, height: Math.max(1, hh), rx: 3, fill: opts.color || SERIES[0] }, s);
-      const hit = el('rect', { x: padL + i * step, y: padT, width: step, height: plotH, fill: 'transparent' }, s);
       hit.style.cursor = 'crosshair';
       const label = opts.labels ? opts.labels[i] : String(i);
       const tipHtml = '<b>coefficient ' + label + '</b><br>value: ' + fmt(v, opts);
       hit.addEventListener('mousemove', e => showTip(e, tipHtml));
       hit.addEventListener('mouseleave', hideTip);
+      rect.addEventListener('mousemove', e => showTip(e, tipHtml));
+      rect.addEventListener('mouseleave', hideTip);
       keyboardTip(hit, tipHtml);
     });
     return s;
@@ -207,14 +211,20 @@
       const yR = padT + ((W - revealed) / W) * plotH;
       const hR = (revealed / W) * plotH;
       // remaining (hidden) portion, recessive
-      el('rect', { x, y: padT, width: bw, height: Math.max(1, (hidden / W) * plotH), rx: 3, fill: 'var(--surface-2)', stroke: 'var(--line)' }, s);
+      const hitW = Math.max(46, step);
+      const hitX = padL + i * step + (step - hitW) / 2;
+      const hit = el('rect', { x: hitX, y: padT, width: hitW, height: plotH, fill: 'transparent' }, s);
+      const hiddenRect = el('rect', { x, y: padT, width: bw, height: Math.max(1, (hidden / W) * plotH), rx: 3, fill: 'var(--surface-2)', stroke: 'var(--line)' }, s);
       // revealed steps
-      el('rect', { x, y: yR, width: bw, height: Math.max(1, hR), rx: 3, fill: SERIES[0] }, s);
-      const hit = el('rect', { x: padL + i * step, y: padT, width: step, height: plotH, fill: 'transparent' }, s);
+      const shownRect = el('rect', { x, y: yR, width: bw, height: Math.max(1, hR), rx: 3, fill: SERIES[0] }, s);
       hit.style.cursor = 'crosshair';
       const tipHtml = '<b>chain ' + i + '</b><br>hash steps revealed: ' + revealed + '<br>steps hidden: ' + hidden;
       hit.addEventListener('mousemove', e => showTip(e, tipHtml));
       hit.addEventListener('mouseleave', hideTip);
+      hiddenRect.addEventListener('mousemove', e => showTip(e, tipHtml));
+      hiddenRect.addEventListener('mouseleave', hideTip);
+      shownRect.addEventListener('mousemove', e => showTip(e, tipHtml));
+      shownRect.addEventListener('mouseleave', hideTip);
       keyboardTip(hit, tipHtml);
     });
     return s;
@@ -239,7 +249,7 @@
     });
     groupedBars('hero-chart', rows,
       [{ label: 'classical bits', color: SERIES[0] }, { label: 'quantum bits', color: SERIES[1] }],
-      { max: 256, ticks: 4, padL: 118, rowH: 34, directLabels: true });
+      { max: 256, ticks: 4, padL: 118, rowH: 46, directLabels: true });
     legend('hero-legend', [
       { label: 'classical bit security', color: SERIES[0] },
       { label: 'post-quantum bit security', color: SERIES[1] }
@@ -475,7 +485,7 @@
     });
     groupedBars('sec-chart', rows,
       [{ label: 'classical bits', color: SERIES[0] }, { label: 'quantum bits', color: SERIES[1] }],
-      { max: 256, ticks: 4, padL: 108, rowH: 32, directLabels: true });
+      { max: 256, ticks: 4, padL: 108, rowH: 46, directLabels: true });
     legend('sec-legend', [
       { label: 'classical bit security', color: SERIES[0] },
       { label: 'quantum bit security', color: SERIES[1] }
@@ -552,7 +562,7 @@
       { label: 'wrong-key decaps rejected', values: [sweep.wrongKeyRejections] },
       { label: 'decryption failures', values: [sweep.decryptionFailures] }
     ], [{ label: 'seeds out of ' + seedCount, color: SERIES[0] }],
-      { max: seedCount, ticks: 4, padL: 210, rowH: 30, directLabels: true });
+      { max: seedCount, ticks: 4, padL: 210, rowH: 46, directLabels: true });
     legend('verify-legend', [{ label: 'outcome count over independent seeds', color: SERIES[0] }]);
 
     chips('verify-checks', [
@@ -593,7 +603,7 @@
       label: r.classical.replace('secp256k1 ', 'EC ') + ' + ' + r.postQuantum.replace('ML-', '').replace('SLH-DSA-', 'SLH-'),
       values: [r.classicalBits, r.quantumBits]
     })), [{ label: 'classical bits', color: SERIES[0] }, { label: 'quantum bits', color: SERIES[1] }],
-      { max: 256, ticks: 4, padL: 150, rowH: 26 });
+      { max: 256, ticks: 4, padL: 150, rowH: 46 });
     legend('hybrid-legend', [
       { label: 'classical bit security', color: SERIES[0] },
       { label: 'post-quantum bit security', color: SERIES[1] }
@@ -649,7 +659,7 @@
       })), [
         { label: 'keygen (log10)', color: SERIES[0] },
         { label: 'sign / encaps (log10)', color: SERIES[1] }
-      ], { max: Math.log10(Math.max(...rows.map(r => r.workUnits.primary))), ticks: 5, padL: 118, rowH: 22, fmt: v => shortNum(Math.pow(10, v)) + ' wu' });
+      ], { max: Math.log10(Math.max(...rows.map(r => r.workUnits.primary))), ticks: 5, padL: 118, rowH: 46, fmt: v => shortNum(Math.pow(10, v)) + ' wu' });
       legend('mx-legend', [
         { label: 'key generation work (log10 scale)', color: SERIES[0] },
         { label: 'sign or encapsulate work (log10 scale)', color: SERIES[1] }
@@ -664,7 +674,7 @@
       })), [
         { label: 'classical bits', color: SERIES[0] },
         { label: 'quantum bits', color: SERIES[1] }
-      ], { max: 256, ticks: 4, padL: 118, rowH: 26, directLabels: true });
+      ], { max: 256, ticks: 4, padL: 118, rowH: 46, directLabels: true });
       legend('mx-legend', [
         { label: 'classical bits, workbench estimator', color: SERIES[0] },
         { label: 'quantum bits, workbench estimator', color: SERIES[1] },
@@ -677,7 +687,7 @@
       })), [
         { label: 'pk / ek bytes', color: SERIES[0] },
         { label: 'ct / sig bytes', color: SERIES[1] }
-      ], { max: Math.max(...rows.map(r => r.bytes.payload)), ticks: 4, padL: 118, rowH: 24, fmt: v => shortNum(v) + ' B' });
+      ], { max: Math.max(...rows.map(r => r.bytes.payload)), ticks: 4, padL: 118, rowH: 46, fmt: v => shortNum(v) + ' B' });
       legend('mx-legend', [
         { label: 'public or encapsulation key bytes', color: SERIES[0] },
         { label: 'ciphertext or signature bytes', color: SERIES[1] }
@@ -1245,38 +1255,42 @@
     const fipsColor = { 'FIPS 203': SERIES[0], 'FIPS 204': SERIES[1], 'FIPS 205': SERIES[2] };
     const frontierIds = new Set(fp.frontier.map(f => f.id));
     for (const p of fp.fips) {
+      const hit = el('circle', { cx: xS(p.x), cy: yS(p.y), r: 23, fill: 'transparent' }, s);
       const c = el('circle', {
         cx: xS(p.x), cy: yS(p.y), r: 3.5,
-        fill: fipsColor[p.standard] || SERIES[0], 'fill-opacity': .75,
-        tabindex: '0', 'aria-label': p.id + ': ' + p.x + ' bytes, work index ' + Math.round(p.y * 100) / 100
+        fill: fipsColor[p.standard] || SERIES[0], 'fill-opacity': .75
       }, s);
       const ttl = document.createElementNS(NS, 'title');
       ttl.textContent = p.id;
       c.appendChild(ttl);
       const html = '<b>' + esc(p.id) + '</b><br>' + shortNum(p.x) + ' B pk+payload<br>work index ' + Math.round(p.y * 100) / 100;
+      hit.addEventListener('mousemove', e => showTip(e, html));
+      hit.addEventListener('mouseleave', hideTip);
       c.addEventListener('mousemove', e => showTip(e, html));
       c.addEventListener('mouseleave', hideTip);
-      keyboardTip(c, html);
+      keyboardTip(hit, html);
     }
     for (const p of fp.regimes) {
       const onFrontier = frontierIds.has(p.id);
+      const hit = el('circle', { cx: xS(p.x), cy: yS(p.y), r: 23, fill: 'transparent' }, s);
       const c = el('circle', {
         cx: xS(p.x), cy: yS(p.y), r: onFrontier ? 7 : 5.5,
         fill: onFrontier ? 'var(--accent-3)' : 'var(--accent-strong)',
-        stroke: 'var(--bg)', 'stroke-width': 1.5,
-        tabindex: '0', role: 'button',
-        'aria-label': p.id + ': ' + p.x + ' bytes, work index ' + Math.round(p.y * 100) / 100 + ', activate to inspect'
+        stroke: 'var(--bg)', 'stroke-width': 1.5
       }, s);
       const ttl = document.createElementNS(NS, 'title');
       ttl.textContent = p.id;
       c.appendChild(ttl);
       const html = '<b>' + esc(p.id) + '</b><br>' + shortNum(p.x) + ' B pk+payload<br>work index ' + Math.round(p.y * 100) / 100 + (onFrontier ? '<br>non-dominated' : '');
+      hit.addEventListener('mousemove', e => showTip(e, html));
+      hit.addEventListener('mouseleave', hideTip);
       c.addEventListener('mousemove', e => showTip(e, html));
       c.addEventListener('mouseleave', hideTip);
-      keyboardTip(c, html);
+      keyboardTip(hit, html);
       const pick = () => { if (labMatrix) { const cell = labMatrix.cells.find(x => x.regime === p.id); if (cell) labSelectRegime(cell); } };
+      hit.addEventListener('click', pick);
       c.addEventListener('click', pick);
-      c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+      hit.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
     }
     legend('lab-frontier-legend', [
       { label: 'FIPS 203 sets', color: SERIES[0] },
